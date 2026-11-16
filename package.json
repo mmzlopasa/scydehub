@@ -1,0 +1,15 @@
+{
+  "name": "scydehub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SCYDE Hub — self-hosted homelab dashboard & monitoring",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test": "npm run test -w server"
+  },
+  "engines": { "node": ">=22.13" }
+}
