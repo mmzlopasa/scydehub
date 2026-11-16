@@ -85,14 +85,52 @@ test('every plugin: valid metadata, mock data and widget ids', () => {
   }
 });
 
-test('instances: secrets encrypted at rest, hidden from the browser, kept when unchanged', () => {
-  const row = createInstance({ plugin: 'radarr', name: 'Radarr', config: { url: 'http://r', apiKey: 'abc123', bogus: 'x' } });
+test('instances: secrets encrypted at rest, hidden from the browser, bound to instance and URL', () => {
+  const row = createInstance({ plugin: 'radarr', name: 'Radarr', config: { url: 'http://r:7878', apiKey: 'abc123', bogus: 'x' } });
   const raw = JSON.parse(q.get<{ config: string }>('SELECT config FROM instances WHERE id = ?', row.id)!.config);
-  assert.ok(raw.apiKey.startsWith('enc:v1:'), 'encrypted in DB');
+  assert.ok(raw.apiKey.startsWith('enc:v2:'), 'encrypted in DB, bound to the instance');
   assert.equal(raw.bogus, undefined, 'unknown fields dropped');
   assert.equal(publicConfig(row).apiKey, SECRET_PLACEHOLDER);
   assert.equal(decryptedConfig(row).apiKey, 'abc123');
-  const updated = updateInstance(row.id, { config: { url: 'http://r2', apiKey: SECRET_PLACEHOLDER } });
-  assert.equal(decryptedConfig(updated).apiKey, 'abc123', 'placeholder keeps the old secret');
-  assert.equal(decryptedConfig(updated).url, 'http://r2');
+
+  // same origin, placeholder → the stored secret is kept
+  const same = updateInstance(row.id, { config: { url: 'http://r:7878/base', apiKey: SECRET_PLACEHOLDER } })!;
+  assert.equal(decryptedConfig(same).apiKey, 'abc123');
+  // different origin, placeholder → refused (a hijacked session must not be able to redirect a stored key)
+  assert.throws(() => updateInstance(row.id, { config: { url: 'http://evil.example', apiKey: SECRET_PLACEHOLDER } }), /re-enter/);
+  // different origin with the secret typed again → fine
+  const moved = updateInstance(row.id, { config: { url: 'http://r2:7878', apiKey: 'new-key' } })!;
+  assert.equal(decryptedConfig(moved).apiKey, 'new-key');
+
+  // ciphertext copied into another instance does not decrypt there
+  const other = createInstance({ plugin: 'sonarr', name: 'Sonarr', config: { url: 'http://s:8989', apiKey: 'zzz' } });
+  const stolen = JSON.parse(q.get<{ config: string }>('SELECT config FROM instances WHERE id = ?', moved.id)!.config).apiKey;
+  q.run('UPDATE instances SET config = ? WHERE id = ?', JSON.stringify({ url: 'http://s:8989', apiKey: stolen }), other.id);
+  assert.equal(decryptedConfig({ ...other, config: JSON.stringify({ url: 'http://s:8989', apiKey: stolen }) }).apiKey, '');
+
+  // ciphertext in a non-secret field is never decrypted
+  assert.throws(() => updateInstance(row.id, { config: { url: stolen, apiKey: 'x' } }));
+});
+
+test('settings: unknown keys dropped, bad values ignored, kiosk view has no capability URLs', async () => {
+  const { allSettings, updateSettings, kioskSettings } = await import('../src/settings.js');
+  updateSettings({ appearance: { accent: 'javascript:alert(1)', radius: 12, evil: 1 }, heartbeat: null, branding: { name: 'My Lab', logo: 'http://insecure/logo.png' } } as any);
+  const s = allSettings() as any;
+  assert.equal(s.appearance.accent, '#FFD76A', 'invalid colour ignored');
+  assert.equal(s.appearance.radius, 12);
+  assert.equal(s.appearance.evil, undefined);
+  assert.equal(s.heartbeat.url, '', 'null does not break the heartbeat');
+  assert.equal(s.branding.name, 'My Lab');
+  assert.equal(s.branding.logo, '', 'only https or data:image logos');
+  updateSettings({ heartbeat: { url: 'https://hc-ping.com/secret-uuid' } });
+  assert.equal((kioskSettings() as any).heartbeat, undefined);
+  assert.equal((kioskSettings() as any).publicUrl, undefined);
+});
+
+test('http client refuses paths that leave the configured host', async () => {
+  const { buildUrl } = await import('../src/lib/http.js');
+  assert.equal(buildUrl('http://a:1/x', ''), 'http://a:1/x');
+  assert.equal(buildUrl('http://a:1', '/api/v3/queue', { page: 1 }), 'http://a:1/api/v3/queue?page=1');
+  assert.throws(() => buildUrl('http://a:1', 'http://evil/steal'));
+  assert.throws(() => buildUrl('http://a:1', '//evil/steal'));
 });

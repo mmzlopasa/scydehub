@@ -13,19 +13,19 @@ function finish(d: ImmichData) {
   const busy = d.queues.reduce((a, b) => a + b.active + b.waiting, 0);
   return {
     status: 'up' as const,
-    summary: `${d.photos.toLocaleString('hr')} fotografija · ${d.videos.toLocaleString('hr')} videa`,
+    summary: `${d.photos.toLocaleString('en-US')} photos · ${d.videos.toLocaleString('en-US')} videos`,
     data: d,
     metrics: { photos: d.photos, videos: d.videos, usage: d.usage, jobs_pending: busy, jobs_failed: failed, ...(d.disk ? { disk_pct: d.disk.pct } : {}) },
-    alerts: d.disk && d.disk.pct > 90 ? [{ key: 'disk', severity: 'warning' as const, message: `Immich disk ${d.disk.pct}% pun` }] : [],
+    alerts: d.disk && d.disk.pct > 90 ? [{ key: 'disk', severity: 'warning' as const, message: `Immich disk ${d.disk.pct}% full` }] : [],
   };
 }
 
 export const immich: Plugin<Cfg, ImmichData> = {
   id: 'immich', name: 'Immich', icon: 'immich', category: 'media',
-  description: 'Broj fotografija i videa, zauzeće, korisnici, stanje job queuea.',
+  description: 'Photo and video counts, storage usage, users, job queue status.',
   docsUrl: 'https://api.immich.app/',
   defaultInterval: 60,
-  fields: [urlField('http://192.168.1.20:2283'), apiKeyField('API ključ (admin; dozvole server.statistics, queue.read)'), ...tlsFields],
+  fields: [urlField('http://192.168.1.20:2283'), apiKeyField('API key (admin; permissions server.statistics, queue.read)'), ...tlsFields],
   http: (c) => ({ headers: { 'x-api-key': c.apiKey } }),
   async collect({ http }) {
     const [ver, stats, storage] = await Promise.all([
@@ -64,5 +64,5 @@ export const immich: Plugin<Cfg, ImmichData> = {
       ],
     });
   },
-  widgets: [{ id: 'library', name: 'Immich', description: 'Biblioteka, zauzeće i job queue', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
+  widgets: [{ id: 'library', name: 'Immich', description: 'Library, storage usage and job queue', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
 };

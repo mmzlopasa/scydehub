@@ -20,9 +20,10 @@ export function detectProfile(): Profile {
 export function setProfile(p: Profile | null) {
   try { p ? localStorage.setItem(KEY, p) : localStorage.removeItem(KEY); } catch { /* ignore */ }
 }
-export const GRID: Record<Profile, { cols: number; rowHeight: number; margin: number }> = {
-  desktop: { cols: 12, rowHeight: 64, margin: 14 },
-  tablet: { cols: 8, rowHeight: 64, margin: 12 },
-  tv: { cols: 12, rowHeight: 74, margin: 18 },
-  mobile: { cols: 4, rowHeight: 60, margin: 10 },
+/** Fine grid: twice the old resolution in both directions, so widgets can sit (almost) anywhere. */
+export const GRID: Record<Profile, { cols: number; rowHeight: number }> = {
+  desktop: { cols: 24, rowHeight: 25 },
+  tablet: { cols: 16, rowHeight: 25 },
+  tv: { cols: 24, rowHeight: 30 },
+  mobile: { cols: 8, rowHeight: 23 },
 };

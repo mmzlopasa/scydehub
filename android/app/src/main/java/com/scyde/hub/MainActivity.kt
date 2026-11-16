@@ -47,7 +47,8 @@ class MainActivity : Activity() {
             return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(true); setTurnScreenOn(true) }
+        // showing the dashboard over the lock screen is opt-in (it would expose it on a locked phone or tablet)
+        if (Build.VERSION.SDK_INT >= 27 && prefs.showWhenLocked) { setShowWhenLocked(true); setTurnScreenOn(true) }
 
         web = WebView(this).apply {
             setBackgroundColor(Color.parseColor("#0A0A10"))
@@ -57,6 +58,14 @@ class MainActivity : Activity() {
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.cacheMode = WebSettings.LOAD_DEFAULT
+            // lock the WebView down: no local files, no content providers, no mixed content, no geolocation
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.setGeolocationEnabled(false)
+            settings.setSupportMultipleWindows(false)
+            settings.javaScriptCanOpenWindowsAutomatically = false
+            if (Build.VERSION.SDK_INT >= 26) settings.safeBrowsingEnabled = true
             settings.userAgentString = settings.userAgentString + " SCYDEHubTV/" + BuildConfig.VERSION_NAME
             webViewClient = Client()
             webChromeClient = WebChromeClient()
@@ -101,11 +110,20 @@ class MainActivity : Activity() {
 
     private fun showError(msg: String) {
         failed = true
-        overlay.text = "SCYDE Hub nije dostupan\n\n$msg\n\nPonovni pokušaj za 10 s…\n(Drži BACK ili pritisni MENU za postavke)"
+        overlay.text = "SCYDE Hub is unreachable\n\n$msg\n\nRetrying in 10 s…\n(Hold BACK or press MENU for settings)"
         overlay.visibility = View.VISIBLE
         handler.removeCallbacks(retry)
         handler.postDelayed(retry, 10_000)
     }
+
+    private fun port(u: android.net.Uri): Int = if (u.port != -1) u.port else if (u.scheme == "https") 443 else 80
+
+    /** SHA-256 fingerprint of the certificate the server presented. */
+    private fun fingerprint(cert: android.net.http.SslCertificate?): String? = try {
+        val der: ByteArray? = if (Build.VERSION.SDK_INT >= 29) cert?.x509Certificate?.encoded
+        else android.net.http.SslCertificate.saveState(cert)?.getByteArray("x509-certificate")
+        der?.let { java.security.MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { b -> "%02x".format(b) } }
+    } catch (_: Exception) { null }
 
     private inner class Client : WebViewClient() {
         override fun onPageFinished(view: WebView, url: String) {
@@ -115,23 +133,32 @@ class MainActivity : Activity() {
             failed = false
         }
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame) showError(error.description?.toString() ?: "Greška mreže")
+            if (request.isForMainFrame) showError(error.description?.toString() ?: "Network error")
         }
         override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
             if (request.isForMainFrame && response.statusCode >= 500) showError("HTTP ${response.statusCode}")
         }
         @SuppressLint("WebViewClientOnReceivedSslError")
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-            // Only for the configured Hub host, and only if the user explicitly allowed it in setup.
-            val hubHost = android.net.Uri.parse(prefs.url).host
-            val host = android.net.Uri.parse(error.url).host
-            if (prefs.acceptSelfSigned && hubHost != null && hubHost == host) handler.proceed()
-            else { handler.cancel(); showError("TLS certifikat nije valjan (${error.primaryError})") }
+            // Self-signed certificates are accepted only for the configured Hub, only if enabled in setup,
+            // and only the exact certificate seen the first time (trust on first use). A different
+            // certificate later — e.g. someone intercepting the connection — is refused.
+            val hub = android.net.Uri.parse(prefs.url)
+            val u = android.net.Uri.parse(error.url)
+            val fp = fingerprint(error.certificate)
+            val sameHub = hub.host != null && hub.host == u.host && port(hub) == port(u) && u.scheme == "https"
+            if (!prefs.acceptSelfSigned || !sameHub || fp == null) {
+                handler.cancel(); showError("TLS certificate is not valid (${error.primaryError})"); return
+            }
+            if (prefs.pinnedCert.isEmpty()) prefs.pinnedCert = fp
+            if (prefs.pinnedCert == fp) handler.proceed()
+            else { handler.cancel(); showError("The Hub's certificate changed. If you replaced it, open setup and save again.") }
         }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            // stay inside the Hub; ignore external links on a TV
-            val hubHost = android.net.Uri.parse(prefs.url).host
-            return request.url.host != hubHost
+            // stay inside the Hub (same scheme, host and port); everything else is ignored on a kiosk
+            val hub = android.net.Uri.parse(prefs.url)
+            val u = request.url
+            return !(u.scheme == hub.scheme && u.host == hub.host && port(u) == port(hub))
         }
     }
 
@@ -144,7 +171,7 @@ class MainActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) {
                 val now = System.currentTimeMillis()
                 if (now - lastBack < 1500) openSetup()
-                else Toast.makeText(this, "Pritisni BACK još jednom za postavke", Toast.LENGTH_SHORT).show()
+                else Toast.makeText(this, "Press BACK again for settings", Toast.LENGTH_SHORT).show()
                 lastBack = now
             }
             return true

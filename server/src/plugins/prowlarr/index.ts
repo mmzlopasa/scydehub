@@ -9,13 +9,13 @@ export interface ProwlarrIndexer {
 export interface ProwlarrData { version?: string; indexers: ProwlarrIndexer[]; totals: { queries: number; grabs: number; failed: number }; health: { type: string; message: string; source: string }[] }
 
 function finish(d: ProwlarrData) {
-  const alerts: PluginAlert[] = d.indexers.filter((i) => i.enabled && i.failing).map((i) => ({ key: `indexer:${i.id}`, severity: 'warning', message: `Indexer ${i.name} ne radi` }));
+  const alerts: PluginAlert[] = d.indexers.filter((i) => i.enabled && i.failing).map((i) => ({ key: `indexer:${i.id}`, severity: 'warning', message: `Indexer ${i.name} is failing` }));
   for (const h of d.health.filter((h) => h.type === 'error')) alerts.push({ key: `health:${h.source}`, severity: 'critical', message: h.message });
   const enabled = d.indexers.filter((i) => i.enabled);
   const failing = enabled.filter((i) => i.failing).length;
   return {
     status: failing && failing === enabled.length ? ('degraded' as const) : ('up' as const),
-    summary: `${enabled.length - failing}/${enabled.length} indexera radi`,
+    summary: `${enabled.length - failing}/${enabled.length} indexers working`,
     data: d, alerts,
     metrics: { indexers_ok: enabled.length - failing, indexers_failing: failing, queries: d.totals.queries, grabs: d.totals.grabs },
   };
@@ -23,7 +23,7 @@ function finish(d: ProwlarrData) {
 
 export const prowlarr: Plugin<Cfg, ProwlarrData> = {
   id: 'prowlarr', name: 'Prowlarr', icon: 'prowlarr', category: 'media',
-  description: 'Stanje indexera, neuspjeli indexeri, broj upita i grabova.',
+  description: 'Indexer status, failing indexers, query and grab counts.',
   docsUrl: 'https://prowlarr.com/docs/api/',
   defaultInterval: 60,
   fields: [urlField('http://192.168.1.20:9696'), apiKeyField(), ...tlsFields],
@@ -67,9 +67,9 @@ export const prowlarr: Plugin<Cfg, ProwlarrData> = {
     });
   },
   actions: [
-    { id: 'testAll', label: 'Testiraj sve indexere', run: async ({ http }) => { await http.post('/api/v1/indexer/testall', {}); return 'Test pokrenut'; } },
+    { id: 'testAll', label: 'Test all indexers', run: async ({ http }) => { await http.post('/api/v1/indexer/testall', {}); return 'Test started'; } },
   ],
   widgets: [
-    { id: 'indexers', name: 'Prowlarr indexeri', description: 'Stanje i statistika indexera', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'indexers', name: 'Prowlarr indexers', description: 'Indexer status and statistics', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
   ],
 };

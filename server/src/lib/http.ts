@@ -17,6 +17,7 @@ export class HttpError extends Error {
   }
 }
 
+const MAX_BODY = 32 * 1024 * 1024;
 const agents = new Map<string, Dispatcher>();
 const defaultAgent = new Agent({ connect: { timeout: 8000 }, keepAliveTimeout: 10_000 });
 
@@ -70,7 +71,9 @@ export interface HttpClient {
 }
 
 export function buildUrl(base: string, path: string, query?: RequestOpts['query']) {
-  const u = new URL(path.startsWith('http') ? path : base.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path));
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) throw new Error('Absolute URLs are not allowed as a path');
+  const u = new URL(path === '' ? base : base.replace(/\/+$/, '') + (path.startsWith('/') ? path : '/' + path));
+  if (u.origin !== new URL(base).origin) throw new Error('Path must stay on the configured host');
   if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined) u.searchParams.set(k, String(v));
   return u.toString();
 }
@@ -96,14 +99,18 @@ export function createHttpClient(baseUrl: string, defaults: { headers?: Record<s
       signal: AbortSignal.timeout(opts.timeoutMs ?? defaults.timeoutMs ?? 10_000),
       redirect: 'manual',
     } as any);
+    const len = Number(res.headers.get('content-length') ?? 0);
+    if (len > MAX_BODY) throw new HttpError(res.status, `Response too large (${len} bytes) ${path}`);
     const text = await res.text();
+    if (text.length > MAX_BODY) throw new HttpError(res.status, `Response too large ${path}`);
     return { status: res.status, headers: res.headers as unknown as Headers, text };
   }
   async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
     const r = await raw(path, opts);
     if (r.status >= 400 || (r.status >= 300 && r.status < 400)) {
-      const short = r.text.slice(0, 200).replace(/\s+/g, ' ');
-      throw new HttpError(r.status, `HTTP ${r.status} ${path}${short ? ' — ' + short : ''}`, r.text);
+      // The message ends up in widget state (visible to read-only kiosks) and logs: never include the
+      // response body or the query string (both may carry credentials). The body stays on the error object.
+      throw new HttpError(r.status, `HTTP ${r.status} ${path.split('?')[0]}`, r.text);
     }
     if (opts.text) return r.text as T;
     if (!r.text) return undefined as T;

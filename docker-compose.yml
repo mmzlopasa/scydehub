@@ -4,47 +4,75 @@
 #   Domain + HTTPS:   ./deploy/init-letsencrypt.sh  (once), then docker compose --profile proxy up -d
 name: scydehub
 
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
 services:
-  hub:
+  # One-shot: make ./data writable for the unprivileged user the Hub runs as (uid 1000).
+  init:
+    image: ghcr.io/mmzlopasa/scydehub:${SCYDE_TAG:-latest}
     build:
       context: .
-      args:
-        VERSION: ${SCYDE_VERSION:-0.1.0}
+      args: { VERSION: "${SCYDE_VERSION:-0.2.0}", BUILD_ID: "${SCYDE_BUILD_ID:-dev}" }
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R node:node /data && chmod 700 /data"]
+    volumes:
+      - ./data:/data
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    security_opt:
+      - no-new-privileges:true
+    network_mode: none
+    restart: "no"
+
+  hub:
+    <<: *hardening
     image: ghcr.io/mmzlopasa/scydehub:${SCYDE_TAG:-latest}
     container_name: scydehub
-    restart: unless-stopped
-    env_file: .env
+    depends_on:
+      init: { condition: service_completed_successfully }
+    # Only what the Hub itself needs — the tunnel token and other compose variables stay out of this container.
     environment:
       SCYDE_SECRET_KEY: ${SCYDE_SECRET_KEY:?Set SCYDE_SECRET_KEY in .env (openssl rand -hex 32)}
+      SCYDE_ADMIN_USER: ${SCYDE_ADMIN_USER:-admin}
+      SCYDE_ADMIN_PASSWORD: ${SCYDE_ADMIN_PASSWORD:-}
+      SCYDE_SECURE_COOKIES: ${SCYDE_SECURE_COOKIES:-auto}
+      SCYDE_TRUST_PROXY: ${SCYDE_TRUST_PROXY:-loopback,172.16.0.0/12}
+      SCYDE_MOCK: ${SCYDE_MOCK:-0}
+      TZ: ${TZ:-UTC}
     ports:
       - "${HUB_BIND:-0.0.0.0}:${HUB_PORT:-8484}:8484"
     volumes:
       - ./data:/data
-      # Optional: Docker integration via a read-only socket proxy is safer than mounting the socket directly
-      # - /var/run/docker.sock:/var/run/docker.sock:ro
     sysctls:
       # lets the non-root container send ICMP echo (ping checks) without NET_RAW
       net.ipv4.ping_group_range: "0 2147483647"
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+    pids_limit: 256
+    mem_limit: 768m
 
   # Cloudflare Tunnel: no open ports, no nginx/certbot. In the Cloudflare dashboard set the
   # public hostname service to http://hub:8484
   cloudflared:
+    <<: *hardening
     profiles: [tunnel]
     image: cloudflare/cloudflared:latest
     container_name: scydehub-cloudflared
-    restart: unless-stopped
     depends_on: [hub]
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    read_only: true
+    pids_limit: 128
+    mem_limit: 256m
 
   nginx:
     profiles: [proxy]

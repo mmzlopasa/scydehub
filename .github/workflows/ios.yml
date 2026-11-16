@@ -24,7 +24,7 @@ jobs:
       - run: npx cap sync ios
       - name: Build (no code signing — Feather signs it on the device)
         run: |
-          V="${{ github.ref_type == 'tag' && github.ref_name || '0.1.0' }}"; V="${V#v}"
+          V="${{ github.ref_type == 'tag' && github.ref_name || '0.2.0' }}"; V="${V#v}"
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \

@@ -7,7 +7,7 @@ export interface VwData { alive: boolean; responseMs: number; version?: string; 
 
 export const vaultwarden: Plugin<Cfg, VwData> = {
   id: 'vaultwarden', name: 'Vaultwarden', icon: 'vaultwarden', category: 'security',
-  description: 'Online/offline (/alive provjerava i bazu), vrijeme odziva, verzija i istek certifikata.',
+  description: 'Online/offline (/alive also checks the database), response time, version and certificate expiry.',
   docsUrl: 'https://github.com/dani-garcia/vaultwarden/wiki',
   defaultInterval: 60,
   fields: [urlField('https://vault.example.com'), ...tlsFields],
@@ -22,12 +22,12 @@ export const vaultwarden: Plugin<Cfg, VwData> = {
       scratch.cert = r.extra ? { daysLeft: Number(r.extra.daysLeft), expiresAt: Number(r.extra.expiresAt), issuer: r.extra.issuer as string } : null;
     }
     const d: VwData = { alive: true, responseMs, version: scratch.version, serverTime: String(alive), cert: scratch.cert ?? null };
-    const alerts = d.cert && d.cert.daysLeft < 14 ? [{ key: 'cert', severity: (d.cert.daysLeft < 3 ? 'critical' : 'warning') as 'critical' | 'warning', message: `Certifikat ističe za ${d.cert.daysLeft} d` }] : [];
+    const alerts = d.cert && d.cert.daysLeft < 14 ? [{ key: 'cert', severity: (d.cert.daysLeft < 3 ? 'critical' : 'warning') as 'critical' | 'warning', message: `Certificate expires in ${d.cert.daysLeft} d` }] : [];
     return { status: 'up', summary: `${responseMs} ms${d.version ? ' · v' + d.version : ''}`, data: d, metrics: { response_ms: responseMs }, alerts };
   },
   mock() {
     const ms = Math.round(18 + Math.random() * 20);
     return { status: 'up', summary: `${ms} ms · v1.34.3`, data: { alive: true, responseMs: ms, version: '1.34.3', serverTime: new Date().toISOString(), cert: { daysLeft: 61, expiresAt: Date.now() + 61 * 86400_000, issuer: "Let's Encrypt" } }, metrics: { response_ms: ms } };
   },
-  widgets: [{ id: 'status', name: 'Vaultwarden', description: 'Stanje, odziv, verzija, certifikat', sizes: ['S', 'M'], defaultSize: 'S' }],
+  widgets: [{ id: 'status', name: 'Vaultwarden', description: 'Status, response time, version, certificate', sizes: ['S', 'M'], defaultSize: 'S' }],
 };

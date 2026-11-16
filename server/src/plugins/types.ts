@@ -88,8 +88,8 @@ export interface Plugin<C = Record<string, any>, D = any> {
 }
 
 export const tlsFields: ConfigField[] = [
-  { key: 'tlsInsecure', label: 'Prihvati self-signed certifikat (samo ovaj servis)', type: 'boolean', default: false },
-  { key: 'tlsFingerprint', label: 'SHA-256 pin certifikata (opcionalno)', type: 'string', placeholder: 'AB:CD:…', help: 'Sigurnije od isključivanja provjere: prihvaća samo točno ovaj certifikat.' },
+  { key: 'tlsInsecure', label: 'Accept self-signed certificate (this service only)', type: 'boolean', default: false },
+  { key: 'tlsFingerprint', label: 'Certificate SHA-256 pin (optional)', type: 'string', placeholder: 'AB:CD:…', help: 'Safer than disabling verification: accepts only this exact certificate.' },
 ];
 
 export function tlsFrom(c: Record<string, any>): TlsOptions {
@@ -97,7 +97,7 @@ export function tlsFrom(c: Record<string, any>): TlsOptions {
 }
 
 export const urlField = (placeholder: string): ConfigField => ({ key: 'url', label: 'URL', type: 'url', required: true, placeholder });
-export const apiKeyField = (label = 'API ključ'): ConfigField => ({ key: 'apiKey', label, type: 'secret', required: true });
+export const apiKeyField = (label = 'API key'): ConfigField => ({ key: 'apiKey', label, type: 'secret', required: true });
 
 /** helpers for mock data */
 export const wave = (tick: number, base: number, amp: number, period = 20) => base + amp * Math.sin((tick / period) * Math.PI * 2);

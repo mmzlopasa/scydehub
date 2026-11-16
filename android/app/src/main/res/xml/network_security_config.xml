@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Hub usually lives on the LAN over plain HTTP (or behind nginx with HTTPS). -->
+<!-- The Hub usually lives on the LAN over plain HTTP (or behind a proxy with HTTPS), so cleartext stays
+     allowed. Only system CAs are trusted; a self-signed Hub certificate is pinned on first use by the app. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
 </network-security-config>

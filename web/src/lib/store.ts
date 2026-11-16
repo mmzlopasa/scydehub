@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react';
 import { get } from './api';
-import type { Board, CheckState, Incident, Instance, InstanceState, Me, PluginMeta, Settings } from './types';
+import type { Board, Branding, CheckState, Incident, Instance, InstanceState, Me, PluginMeta, Settings } from './types';
 
 export interface AppState {
   me: Me | null;
@@ -8,6 +8,8 @@ export interface AppState {
   instances: Instance[];
   boards: Board[];
   settings: Settings | null;
+  /** public look & name, available before sign-in */
+  branding: Branding | null;
   states: Record<string, InstanceState>;
   checks: Record<string, CheckState>;
   incidents: Incident[];
@@ -18,7 +20,7 @@ export interface AppState {
 }
 
 let state: AppState = {
-  me: null, plugins: [], instances: [], boards: [], settings: null, states: {}, checks: {}, incidents: [],
+  me: null, plugins: [], instances: [], boards: [], settings: null, branding: null, states: {}, checks: {}, incidents: [],
   conn: 'connecting', lastMessageAt: 0, editMode: false, loaded: false,
 };
 const subs = new Set<() => void>();
@@ -55,6 +57,9 @@ export async function loadMe() {
   setState({ me });
   return me;
 }
+export async function loadBranding() {
+  try { setState({ branding: await get<Branding>('/api/branding') }); } catch { /* keep defaults */ }
+}
 export async function loadConfig(scope: string = 'all') {
   const tasks: Promise<void>[] = [];
   if (scope === 'all' || scope === 'boards' || scope === 'layouts') tasks.push(get<Board[]>('/api/boards').then((boards) => setState({ boards })));
@@ -64,6 +69,9 @@ export async function loadConfig(scope: string = 'all') {
   await Promise.all(tasks);
   if (scope === 'all') setState({ loaded: true });
 }
+
+let settingsHold = 0;
+export const holdSettingsReload = (ms: number) => { settingsHold = Date.now() + ms; };
 
 function upsertIncident(list: Incident[], inc: Incident) {
   const i = list.findIndex((x) => x.id === inc.id);
@@ -101,6 +109,8 @@ export function handleMessage(m: any) {
       setState((s) => ({ incidents: upsertIncident(s.incidents, m.incident) }));
       break;
     case 'config':
+      // while the user is dragging a slider in Customize, a refetch would snap the value back
+      if (m.scope === 'settings' && Date.now() < settingsHold) break;
       void loadConfig(m.scope === 'checks' ? 'none' : m.scope);
       if (m.scope === 'checks' || m.scope === 'all') void get('/api/state').then((st) => handleMessage({ type: 'snapshot', ...st }));
       break;

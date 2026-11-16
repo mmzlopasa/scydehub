@@ -7,7 +7,7 @@ import { BoardView } from './Board';
 import { Button, cx } from '../components/ui';
 import { CoreIcon } from '../components/icons';
 import { useNow } from '../lib/hooks';
-import { duration } from '../lib/format';
+import { duration, time } from '../lib/format';
 import { useSummary } from '../widgets/core/core';
 import { toast } from '../components/feedback';
 
@@ -59,8 +59,9 @@ export function Kiosk({ profile }: { profile: Profile }) {
 
   // rotation
   useEffect(() => {
-    if (paused || list.length < 2) return;
-    const t = setTimeout(() => setIdx((i) => (i + 1) % list.length), (k?.rotationSec ?? 30) * 1000);
+    const sec = Number(k?.rotationSec ?? 30);
+    if (paused || list.length < 2 || !(sec > 0)) return; // 0 = stay on the first board
+    const t = setTimeout(() => setIdx((i) => (i + 1) % list.length), Math.max(3, sec) * 1000);
     return () => clearTimeout(t);
   }, [idx, paused, list.length, k?.rotationSec]);
 
@@ -94,8 +95,8 @@ export function Kiosk({ profile }: { profile: Profile }) {
     taps.current = [...taps.current.filter((x) => t - x < 2500), t];
     if (taps.current.length < 5) return;
     taps.current = [];
-    if (/SCYDEHubiOS/.test(navigator.userAgent)) location.href = 'capacitor://localhost/?setup=1';
-    else if (me?.auth?.kind === 'kiosk' && confirm('Odspojiti ovaj uređaj (zaboraviti kiosk token)?')) { kioskToken.clear(); location.assign('/kiosk'); }
+    if (window.parent !== window) window.parent.postMessage({ scyde: 'setup' }, '*'); // iOS shell: back to its setup screen
+    else if (me?.auth?.kind === 'kiosk' && confirm('Disconnect this device (forget the kiosk token)?')) { kioskToken.clear(); location.assign('/kiosk'); }
   };
 
   const board = list[idx];
@@ -106,35 +107,35 @@ export function Kiosk({ profile }: { profile: Profile }) {
   return (
     <div className={cx('kiosk min-h-full', cursor && 'cursor-ok')} onMouseMove={interact} onTouchStart={interact} onClick={interact}>
       <div style={{ transform: `translate(${shift.x}px, ${shift.y}px)`, transition: 'transform 2s ease' }} className={cx('mx-auto max-w-[2400px]', profile === 'tv' ? 'px-8 py-6' : 'px-4 py-4 sm:px-6')}>
-        <div className="mb-4 flex items-center gap-4">
+        <div className={cx('mb-4 flex items-center gap-4', k?.showHeader === false && 'hidden')}>
           <div className="flex items-center gap-2 text-lg font-semibold">{board && <CoreIcon name={board.icon} className="size-5 text-accent" />}{board?.name}</div>
           <div className="flex gap-1.5">{list.map((b, i) => <span key={b.id} className={cx('h-1.5 rounded-full transition-all', i === idx ? 'w-6 bg-accent' : 'w-1.5 bg-line')} />)}</div>
-          {paused && <span className="flex items-center gap-1 text-xs text-muted"><Pause className="size-3" />pauzirano</span>}
+          {paused && <span className="flex items-center gap-1 text-xs text-muted"><Pause className="size-3" />paused</span>}
           <div className="ml-auto flex items-center gap-4 text-sm">
             <span className={cx('num font-medium', sum.down ? 'text-bad' : 'text-ok')}>{sum.up}/{sum.total} online</span>
             {conn !== 'online' ? <WifiOff className="size-4 text-bad" /> : <Wifi className="size-4 text-muted" />}
-            <span className="num select-none text-2xl font-semibold" onClick={secretTap}>{new Date(now).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="dot select-none text-2xl font-semibold" onClick={secretTap}>{time(now)}</span>
           </div>
         </div>
-        {board ? <div key={board.id} className="animate-fade-up"><BoardView board={board} profile={profile} editing={false} kiosk /></div> : <div className="py-20 text-center text-muted">Nema stranica.</div>}
+        {board ? <div key={board.id} className="animate-fade-up"><BoardView board={board} profile={profile} editing={false} kiosk /></div> : <div className="py-20 text-center text-muted">No boards.</div>}
       </div>
 
       {conn === 'offline' && (
-        <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full bg-bad/90 px-4 py-2 text-sm text-white shadow-lg">Veza s Hubom prekinuta — ponovno spajanje…</div>
+        <div className="fixed bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full bg-bad/90 px-4 py-2 text-sm text-white shadow-lg">Connection to the Hub lost — reconnecting…</div>
       )}
 
       {takeover.length > 0 && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[radial-gradient(circle_at_center,rgba(239,68,68,.35),rgba(0,0,0,.92))] p-6">
           <div className="w-full max-w-3xl space-y-4 text-center">
             <AlertOctagon className="mx-auto size-20 animate-pulse text-bad" />
-            <div className="text-sm font-semibold uppercase tracking-[0.2em] text-bad">{takeover.length > 1 ? `${takeover.length} aktivna incidenta` : 'Incident'}</div>
+            <div className="text-sm font-semibold uppercase tracking-[0.2em] text-bad">{takeover.length > 1 ? `${takeover.length} active incidents` : 'Incident'}</div>
             {takeover.slice(0, 3).map((i) => (
               <div key={i.id} className="rounded-3xl border border-bad/40 bg-black/40 p-6 text-left">
                 <div className="text-3xl font-semibold text-white">{i.title}</div>
                 <div className="mt-1 text-lg text-white/70">{i.message}</div>
-                <div className="num mt-2 text-sm text-white/50">Traje {duration((now - i.started_at) / 1000, 2)}</div>
+                <div className="num mt-2 text-sm text-white/50">Ongoing for {duration((now - i.started_at) / 1000, 2)}</div>
                 {canAck && (
-                  <Button autoFocus className="tv-focus mt-4 !h-12 !px-6 !text-base" variant="danger" onClick={() => post(`/api/incidents/${i.id}/ack`).catch((e) => toast(e.message, 'bad'))}>Potvrdi incident</Button>
+                  <Button autoFocus className="tv-focus mt-4 !h-12 !px-6 !text-base" variant="danger" onClick={() => post(`/api/incidents/${i.id}/ack`).catch((e) => toast(e.message, 'bad'))}>Acknowledge incident</Button>
                 )}
               </div>
             ))}

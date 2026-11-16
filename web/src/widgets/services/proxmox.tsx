@@ -28,7 +28,7 @@ export function ProxmoxSummary({ data, size, state }: WidgetProps) {
         <div className="min-w-0 flex-1 space-y-1 text-xs">
           <div className="flex justify-between gap-2"><span className="text-muted">Load</span><span className="num">{n.loadavg.map((l: number) => l.toFixed(2)).join(' · ')}</span></div>
           <div className="flex justify-between gap-2"><span className="text-muted">Uptime</span><span className="num">{duration(n.uptime)}</span></div>
-          <div className="flex justify-between gap-2"><span className="text-muted">Gosti</span><span className="num">{running}/{data.guests.length}</span></div>
+          <div className="flex justify-between gap-2"><span className="text-muted">Guests</span><span className="num">{running}/{data.guests.length}</span></div>
           {n.temperature != null && <div className="flex justify-between gap-2"><span className="text-muted">Temp</span><span className="num">{n.temperature}°C</span></div>}
         </div>
       </div>
@@ -36,7 +36,7 @@ export function ProxmoxSummary({ data, size, state }: WidgetProps) {
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
         <span className="truncate">{n.node} · {String(n.version ?? '').replace('pve-manager/', 'PVE ')}</span>
         <span className="num">· {bytes(n.mem)} / {bytes(n.maxmem)}</span>
-        {n.updates > 0 && <Badge tone="info" className="ml-auto">{n.updates} updatea</Badge>}
+        {n.updates > 0 && <Badge tone="info" className="ml-auto">{n.updates} updates</Badge>}
       </div>
     </div>
   );
@@ -49,12 +49,12 @@ function GuestActions({ g, instanceId }: { g: any; instanceId: string }) {
   return (
     <div className="flex opacity-0 transition group-hover/row:opacity-100 focus-within:opacity-100">
       {g.status !== 'running' ? (
-        <button className={btn} title="Pokreni" onClick={stop(() => runAction(instanceId, 'start', p, label))}><Play className="size-3.5" /></button>
+        <button className={btn} title="Start" onClick={stop(() => runAction(instanceId, 'start', p, label))}><Play className="size-3.5" /></button>
       ) : (
         <>
-          <button className={btn} title="Restartaj" onClick={stop(() => runAction(instanceId, 'reboot', p, label))}><RotateCw className="size-3.5" /></button>
-          <button className={btn} title="Ugasi" onClick={stop(() => runAction(instanceId, 'shutdown', p, label))}><Power className="size-3.5" /></button>
-          <button className={btn} title="Prisilno zaustavi" onClick={stop(() => runAction(instanceId, 'stop', p, label))}><Square className="size-3.5" /></button>
+          <button className={btn} title="Reboot" onClick={stop(() => runAction(instanceId, 'reboot', p, label))}><RotateCw className="size-3.5" /></button>
+          <button className={btn} title="Shut down" onClick={stop(() => runAction(instanceId, 'shutdown', p, label))}><Power className="size-3.5" /></button>
+          <button className={btn} title="Force stop" onClick={stop(() => runAction(instanceId, 'stop', p, label))}><Square className="size-3.5" /></button>
         </>
       )}
     </div>
@@ -68,7 +68,7 @@ export function ProxmoxGuests({ data, size, instance }: WidgetProps) {
     <List>
       {wide && (
         <div className="grid grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))_auto] gap-3 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted max-sm:hidden">
-          <span>Gost</span><span>CPU</span><span>RAM</span><span>{size === 'XL' ? 'Backup / snap.' : 'Disk'}</span><span className="w-[84px]" />
+          <span>Guest</span><span>CPU</span><span>RAM</span><span>{size === 'XL' ? 'Backup / snap.' : 'Disk'}</span><span className="w-[84px]" />
         </div>
       )}
       {guests.map((g: any) => (
@@ -79,7 +79,7 @@ export function ProxmoxGuests({ data, size, instance }: WidgetProps) {
             {g.type === 'lxc' ? <Box className="size-4 shrink-0 text-muted" /> : <Monitor className="size-4 shrink-0 text-muted" />}
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{g.name}</div>
-              <div className="num truncate text-[11px] text-muted">{g.vmid} · {g.status === 'running' ? duration(g.uptime, 1) : 'zaustavljen'}</div>
+              <div className="num truncate text-[11px] text-muted">{g.vmid} · {g.status === 'running' ? duration(g.uptime, 1) : 'stopped'}</div>
             </div>
           </div>
           {wide ? (
@@ -127,7 +127,7 @@ export function ProxmoxStorage({ data, size }: WidgetProps) {
       </List>
       {size !== 'S' && data?.lastBackupTask && (
         <div className="flex items-center gap-2 border-t border-line pt-2 text-xs text-muted">
-          <Archive className="size-3.5" /> Zadnji backup {ago(data.lastBackupTask.end ?? data.lastBackupTask.start)}
+          <Archive className="size-3.5" /> Last backup {ago(data.lastBackupTask.end ?? data.lastBackupTask.start)}
           <Badge tone={data.lastBackupTask.status === 'OK' ? 'ok' : 'bad'} className="ml-auto">{data.lastBackupTask.status}</Badge>
         </div>
       )}

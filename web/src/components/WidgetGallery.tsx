@@ -10,7 +10,7 @@ import { CoreIcon } from './icons';
 import { toast } from './feedback';
 
 interface Item { key: string; kind: string; name: string; description: string; category: string; icon?: string; coreIcon?: string; instanceId?: string; instanceName?: string; size: Size; sizes: Size[] }
-const CATS: Record<string, string> = { all: 'Sve', core: 'Općenito', infrastructure: 'Infrastruktura', media: 'Media', downloads: 'Preuzimanja', network: 'Mreža', hosting: 'Hosting', security: 'Sigurnost', generic: 'Generičko' };
+const CATS: Record<string, string> = { all: 'All', core: 'General', infrastructure: 'Infrastructure', media: 'Media', downloads: 'Downloads', network: 'Network', hosting: 'Hosting', security: 'Security', generic: 'Generic' };
 
 export function WidgetGallery({ open, onClose, boardId }: { open: boolean; onClose: () => void; boardId: string }) {
   const plugins = useStore((s) => s.plugins);
@@ -27,7 +27,7 @@ export function WidgetGallery({ open, onClose, boardId }: { open: boolean; onClo
         if (!SERVICE_WIDGETS[kind]) continue;
         out.push({ key: `${kind}:${inst.id}`, kind, name: w.name, description: w.description, category: p.category, icon: p.icon, instanceId: inst.id, instanceName: inst.name, size: w.defaultSize, sizes: w.sizes });
       }
-      out.push({ key: `core.chart:${inst.id}`, kind: 'core.chart', name: `${inst.name}: graf`, description: 'Povijest metrika ovog servisa', category: p.category, icon: p.icon, instanceId: inst.id, instanceName: inst.name, size: 'M', sizes: ['S', 'M', 'L', 'XL'] });
+      out.push({ key: `core.chart:${inst.id}`, kind: 'core.chart', name: `${inst.name}: chart`, description: 'Metric history for this service', category: p.category, icon: p.icon, instanceId: inst.id, instanceName: inst.name, size: 'M', sizes: ['S', 'M', 'L', 'XL'] });
     }
     return out;
   }, [plugins, instances]);
@@ -37,16 +37,16 @@ export function WidgetGallery({ open, onClose, boardId }: { open: boolean; onClo
   const add = async (it: Item, size: Size) => {
     try {
       await post(`/api/boards/${boardId}/widgets`, { kind: it.kind, instance_id: it.instanceId, size, options: it.kind === 'core.chart' ? { metrics: ['_latency'], range: 6 } : {} });
-      toast(`Dodano: ${it.name}`);
+      toast(`Added: ${it.name}`);
       onClose();
     } catch (e: any) { toast(e.message, 'bad'); }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Galerija widgeta" wide>
+    <Modal open={open} onClose={onClose} title="Widget gallery" wide>
       <div className="relative mb-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <Input autoFocus placeholder="Pretraži widgete i servise…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
+        <Input autoFocus placeholder="Search widgets and services…" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" />
       </div>
       <div className="mb-4 flex flex-wrap gap-1.5">
         {cats.map((c) => (
@@ -75,10 +75,10 @@ export function WidgetGallery({ open, onClose, boardId }: { open: boolean; onClo
       </div>
       {instances.length === 0 && (
         <div className="mt-4 rounded-2xl border border-dashed border-line p-4 text-center text-sm text-muted">
-          Još nema servisa. <Link className="text-accent" to="/settings/services" onClick={onClose}>Dodaj servis</Link> ili učitaj demo podatke.
+          No services yet. <Link className="text-accent" to="/settings/services" onClick={onClose}>Add a service</Link> or load the demo data.
         </div>
       )}
-      {filtered.length === 0 && <div className="py-8 text-center text-sm text-muted">Ništa ne odgovara pretrazi. <Badge>{q}</Badge></div>}
+      {filtered.length === 0 && <div className="py-8 text-center text-sm text-muted">Nothing matches your search. <Badge>{q}</Badge></div>}
     </Modal>
   );
 }

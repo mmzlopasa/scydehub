@@ -1,3 +1,13 @@
+/** Locale / formatting preferences (set from Settings → Customization → Regional). */
+let _locale = 'en-GB';
+let _hour12 = false;
+export const locale = () => _locale;
+export function setLocale(l?: string, hour12?: boolean) {
+  if (l) _locale = l;
+  if (hour12 !== undefined) _hour12 = hour12;
+}
+const hc = () => ({ hour12: _hour12 });
+
 export function bytes(n?: number | null, digits = 1): string {
   if (n === undefined || n === null || !Number.isFinite(n)) return '—';
   const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
@@ -15,11 +25,11 @@ export function bits(bps?: number | null): string {
 export const speed = (bps?: number | null) => (bps == null ? '—' : `${bytes(bps)}/s`);
 export const pct = (v?: number | null, d = 0) => (v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(d)}%`);
 export const ratio = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
-export const num = (n?: number | null) => (n == null ? '—' : n.toLocaleString('hr-HR'));
+export const num = (n?: number | null) => (n == null ? '—' : n.toLocaleString(_locale));
 
 export function duration(sec?: number | null, parts = 2): string {
   if (sec == null || !Number.isFinite(sec) || sec < 0) return '—';
-  const units: [string, number][] = [['g', 31536000], ['d', 86400], ['h', 3600], ['m', 60], ['s', 1]];
+  const units: [string, number][] = [['y', 31536000], ['d', 86400], ['h', 3600], ['m', 60], ['s', 1]];
   const out: string[] = [];
   let s = Math.floor(sec);
   for (const [l, v] of units) {
@@ -31,26 +41,30 @@ export function duration(sec?: number | null, parts = 2): string {
 export function ago(ts?: number | string | null): string {
   if (!ts) return '—';
   const t = typeof ts === 'string' ? new Date(ts).getTime() : ts;
+  if (!Number.isFinite(t)) return '—';
   const d = (Date.now() - t) / 1000;
-  if (d < 0) return 'za ' + duration(-d, 1);
-  if (d < 10) return 'upravo';
-  return `prije ${duration(d, 1)}`;
+  if (d < 0) return 'in ' + duration(-d, 1);
+  if (d < 10) return 'just now';
+  return `${duration(d, 1)} ago`;
 }
 export function until(ts?: number | string | null): string {
   if (!ts) return '—';
   const t = typeof ts === 'string' ? new Date(ts).getTime() : ts;
   const d = (t - Date.now()) / 1000;
-  if (Math.abs(d) < 3600 * 12 && new Date(t).getDate() === new Date().getDate()) return 'danas ' + time(t);
-  return d < 0 ? ago(t) : 'za ' + duration(d, 1);
+  if (Math.abs(d) < 3600 * 12 && new Date(t).getDate() === new Date().getDate()) return 'today ' + time(t);
+  return d < 0 ? ago(t) : 'in ' + duration(d, 1);
 }
-export const time = (ts: number | string) => new Date(ts).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' });
-export const dateShort = (ts: number | string) => new Date(ts).toLocaleDateString('hr-HR', { day: 'numeric', month: 'short' });
-export const dateTime = (ts: number | string) => new Date(ts).toLocaleString('hr-HR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+export const time = (ts: number | string) => new Date(ts).toLocaleTimeString(_locale, { hour: '2-digit', minute: '2-digit', ...hc() });
+export const timeSec = (ts: number | string) => new Date(ts).toLocaleTimeString(_locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', ...hc() });
+export const dateShort = (ts: number | string) => new Date(ts).toLocaleDateString(_locale, { day: 'numeric', month: 'short' });
+export const dateLong = (ts: number | string) => new Date(ts).toLocaleDateString(_locale, { weekday: 'long', day: 'numeric', month: 'long' });
+export const weekday = (ts: number | string) => new Date(ts).toLocaleDateString(_locale, { weekday: 'short' });
+export const dateTime = (ts: number | string) => new Date(ts).toLocaleString(_locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', ...hc() });
 export function dayLabel(ts: number | string) {
   const d = new Date(ts); const n = new Date();
   const diff = Math.round((new Date(d.toDateString()).getTime() - new Date(n.toDateString()).getTime()) / 86400_000);
-  if (diff === 0) return 'Danas';
-  if (diff === 1) return 'Sutra';
-  if (diff === -1) return 'Jučer';
-  return d.toLocaleDateString('hr-HR', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return d.toLocaleDateString(_locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }

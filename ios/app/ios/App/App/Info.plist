@@ -79,6 +79,6 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>SCYDE Hub se spaja na tvoj homelab dashboard u lokalnoj mreži.</string>
+	<string>SCYDE Hub connects to your homelab dashboard on the local network.</string>
 </dict>
 </plist>

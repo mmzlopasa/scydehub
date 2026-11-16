@@ -23,28 +23,28 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
 
   const cmds = useMemo<Cmd[]>(() => {
     const out: Cmd[] = [];
-    for (const b of boards) out.push({ id: `b:${b.id}`, group: 'Stranice', label: b.name, icon: <CoreIcon name={b.icon} className="size-4" />, run: () => nav(`/b/${b.id}`) });
+    for (const b of boards) out.push({ id: `b:${b.id}`, group: 'Boards', label: b.name, icon: <CoreIcon name={b.icon} className="size-4" />, run: () => nav(`/b/${b.id}`) });
     for (const i of instances) {
       const p = plugins.find((x) => x.id === i.plugin);
-      out.push({ id: `i:${i.id}`, group: 'Servisi', label: i.name, hint: states[i.id]?.summary, keywords: p?.name, icon: <span className="relative"><ServiceIcon slug={p?.icon} name={i.name} size={18} /><span className="absolute -bottom-0.5 -right-0.5"><StatusDot status={states[i.id]?.status} size={6} /></span></span>, run: () => onOpenInstance(i.id) });
+      out.push({ id: `i:${i.id}`, group: 'Services', label: i.name, hint: states[i.id]?.summary, keywords: p?.name, icon: <span className="relative"><ServiceIcon slug={p?.icon} name={i.name} size={18} /><span className="absolute -bottom-0.5 -right-0.5"><StatusDot status={states[i.id]?.status} size={6} /></span></span>, run: () => onOpenInstance(i.id) });
       if (isAdmin)
         for (const a of p?.actions ?? []) {
           if (a.params.some((f) => f.required)) continue; // actions needing params are run from the detail panel
-          out.push({ id: `a:${i.id}:${a.id}`, group: 'Akcije', label: `${i.name}: ${a.label}`, icon: <Zap className={cx('size-4', a.danger ? 'text-bad' : 'text-accent')} />, run: () => void runAction(i.id, a.id) });
+          out.push({ id: `a:${i.id}:${a.id}`, group: 'Actions', label: `${i.name}: ${a.label}`, icon: <Zap className={cx('size-4', a.danger ? 'text-bad' : 'text-accent')} />, run: () => void runAction(i.id, a.id) });
         }
     }
     if (isAdmin) {
-      out.push({ id: 'edit', group: 'Općenito', label: getState().editMode ? 'Završi uređivanje' : 'Uredi raspored', icon: <Pencil className="size-4" />, run: () => setState({ editMode: !getState().editMode }) });
-      const pages: [string, string][] = [['services', 'Servisi'], ['checks', 'Provjere'], ['alerts', 'Alerti i kanali'], ['incidents', 'Incidenti'], ['boards', 'Stranice'], ['kiosk', 'Kiosk i uređaji'], ['appearance', 'Izgled'], ['security', 'Sigurnost'], ['audit', 'Audit log'], ['system', 'Backup i sustav']];
-      for (const [k, l] of pages) out.push({ id: `s:${k}`, group: 'Postavke', label: l, icon: <Settings className="size-4" />, run: () => nav(`/settings/${k}`) });
+      out.push({ id: 'edit', group: 'General', label: getState().editMode ? 'Done editing' : 'Edit layout', icon: <Pencil className="size-4" />, run: () => setState({ editMode: !getState().editMode }) });
+      const pages: [string, string][] = [['services', 'Services'], ['checks', 'Checks'], ['alerts', 'Alerts & channels'], ['incidents', 'Incidents'], ['boards', 'Boards'], ['kiosk', 'Kiosk & devices'], ['customize', 'Customize'], ['security', 'Security'], ['audit', 'Audit log'], ['system', 'Backup & system']];
+      for (const [k, l] of pages) out.push({ id: `s:${k}`, group: 'Settings', label: l, icon: <Settings className="size-4" />, run: () => nav(`/settings/${k}`) });
     }
-    out.push({ id: 'kiosk', group: 'Općenito', label: 'Otvori kiosk način', icon: <MonitorPlay className="size-4" />, run: () => nav('/kiosk') });
+    out.push({ id: 'kiosk', group: 'General', label: 'Open kiosk mode', icon: <MonitorPlay className="size-4" />, run: () => nav('/kiosk') });
     return out;
   }, [boards, instances, plugins, states, isAdmin, nav, onOpenInstance]);
 
   const filtered = useMemo(() => {
     const t = q.toLowerCase().trim();
-    if (!t) return cmds.filter((c) => c.group !== 'Akcije').slice(0, 40);
+    if (!t) return cmds.filter((c) => c.group !== 'Actions').slice(0, 40);
     return cmds
       .map((c) => {
         const hay = `${c.label} ${c.keywords ?? ''} ${c.group}`.toLowerCase();
@@ -68,7 +68,7 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
       <div className="glass animate-pop w-full max-w-xl overflow-hidden rounded-3xl" style={{ background: 'color-mix(in oklab, var(--bg) 90%, transparent)' }}>
         <div className="flex items-center gap-3 border-b border-line px-4">
           <Search className="size-5 text-muted" />
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Skoči na servis, akciju ili stranicu…" className="h-14 flex-1 bg-transparent text-base outline-none placeholder:text-muted"
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Jump to a service, action or board…" className="h-14 flex-1 bg-transparent text-base outline-none placeholder:text-muted"
             onKeyDown={(e) => {
               if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(filtered.length - 1, s + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
@@ -93,7 +93,7 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
               </div>
             );
           })}
-          {!filtered.length && <div className="py-10 text-center text-sm text-muted">Nema rezultata</div>}
+          {!filtered.length && <div className="py-10 text-center text-sm text-muted">No results</div>}
         </div>
       </div>
     </div>,

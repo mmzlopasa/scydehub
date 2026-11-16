@@ -58,7 +58,39 @@ const migrations: string[] = [
     id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT,
     params TEXT, ok INTEGER NOT NULL, result TEXT, ip TEXT);
   `,
+  /* 2 — security hardening + customization + fine 24-column grid */ `
+  ALTER TABLE users ADD COLUMN totp_last_counter INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE sessions ADD COLUMN sudo_until INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE sessions ADD COLUMN last_seen INTEGER;
+  CREATE TABLE recovery_codes (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL, used_at INTEGER);
+  ALTER TABLE instances ADD COLUMN display TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE boards ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
+
+/** Data migrations that need code (run right after the SQL migration with the same number). */
+const codeMigrations: Record<number, () => void> = {
+  2: () => {
+    // layouts were saved for a 12/8/4-column grid; the grid is now twice as fine in both directions
+    const rows = db.prepare('SELECT board_id, profile, layout FROM layouts').all() as { board_id: string; profile: string; layout: string }[];
+    const upd = db.prepare('UPDATE layouts SET layout = ? WHERE board_id = ? AND profile = ?');
+    for (const r of rows) {
+      try {
+        const l = JSON.parse(r.layout) as { i: string; x: number; y: number; w: number; h: number }[];
+        upd.run(JSON.stringify(l.map((it) => ({ i: it.i, x: it.x * 2, y: it.y * 2, w: it.w * 2, h: it.h * 2 }))), r.board_id, r.profile);
+      } catch { /* leave unreadable layouts alone */ }
+    }
+    // the previous default accent was never a deliberate choice — let the new default theme apply
+    const ap = db.prepare("SELECT value FROM settings WHERE key = 'appearance'").get() as { value: string } | undefined;
+    if (ap) {
+      try {
+        const v = JSON.parse(ap.value);
+        if (String(v.accent).toLowerCase() === '#7c5cff') { delete v.accent; db.prepare("UPDATE settings SET value = ? WHERE key = 'appearance'").run(JSON.stringify(v)); }
+      } catch { /* ignore */ }
+    }
+  },
+};
 
 function migrate() {
   db.exec('CREATE TABLE IF NOT EXISTS _migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)');
@@ -68,6 +100,7 @@ function migrate() {
     db.exec('BEGIN');
     try {
       db.exec(migrations[i]);
+      codeMigrations[i + 1]?.();
       db.prepare('INSERT INTO _migrations (version, applied_at) VALUES (?, ?)').run(i + 1, Date.now());
       db.exec('COMMIT');
     } catch (e) {

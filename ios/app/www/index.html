@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="hr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
@@ -18,42 +18,71 @@
     .err { color: #ef4444; font-size: 13px; min-height: 18px; margin-top: 10px; }
     .logo { display: flex; gap: 10px; align-items: center; font-weight: 600; }
     .hint { font-size: 12px; color: #8b90a6; margin-top: 16px; line-height: 1.5; }
+      #hub { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #0d0f14; }
+    form[hidden], #hub[hidden] { display: none; }
   </style>
 </head>
 <body>
   <form id="f" autocomplete="off">
     <div class="logo"><svg width="30" height="30" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#16161f"/><rect x="10" y="10" width="20" height="20" rx="5" fill="#7c5cff"/><rect x="34" y="10" width="20" height="12" rx="4" fill="#fff"/><rect x="34" y="26" width="20" height="28" rx="5" fill="#6248e6"/><rect x="10" y="34" width="20" height="20" rx="5" fill="#fff"/></svg>SCYDE Hub</div>
-    <h1>Poveži uređaj</h1>
-    <p>Upiši adresu Huba i kiosk token (Postavke → Kiosk i uređaji).</p>
-    <label for="url">URL Huba</label>
+    <h1>Connect device</h1>
+    <p>Enter the Hub address and a kiosk token (Settings → Kiosk &amp; devices).</p>
+    <label for="url">Hub URL</label>
     <input id="url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://hub.example.com" required />
     <label for="token">Kiosk token</label>
     <input id="token" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk_…" required />
     <label for="profile">Layout</label>
-    <select id="profile"><option value="tablet">Tablet</option><option value="tv">TV / zid (veći font)</option><option value="desktop">Monitor</option><option value="mobile">Mobitel</option></select>
-    <button type="submit">Spremi i pokreni</button>
+    <select id="profile"><option value="tablet">Tablet</option><option value="tv">TV / wall (larger text)</option><option value="desktop">Monitor</option><option value="mobile">Phone</option></select>
+    <button type="submit">Save and start</button>
     <div class="err" id="err"></div>
-    <div class="hint">Za pravi kiosk uključi <b>Guided Access</b> (Postavke → Pristupačnost → Vođeni pristup) i triput pritisni tipku sa strane. Za povratak na ovaj ekran tapni 5× brzo na sat u gornjem desnom kutu kioska.</div>
+    <div class="hint">For a true kiosk, turn on <b>Guided Access</b> (Settings → Accessibility → Guided Access) and triple-click the side button. To return to this screen, quickly tap the clock in the top-right corner of the kiosk 5 times.</div>
   </form>
+  <iframe id="hub" title="SCYDE Hub" allow="fullscreen" referrerpolicy="no-referrer" hidden></iframe>
   <script>
+    // The Hub is shown inside a frame instead of navigating the app's own WebView to it. That way no web
+    // page — the Hub or anything it links to — ever gets the app's native bridge.
     const K = 'scydehub.shell';
-    const saved = JSON.parse(localStorage.getItem(K) || '{}');
-    const setup = new URLSearchParams(location.search).has('setup');
-    const go = (c) => location.replace(`${c.url}/kiosk?token=${encodeURIComponent(c.token)}&profile=${c.profile}`);
-    if (saved.url && saved.token && !setup) go(saved);
+    const form = document.getElementById('f');
+    const frame = document.getElementById('hub');
+    const read = () => { try { return JSON.parse(localStorage.getItem(K) || '{}'); } catch { return {}; } };
+    const valid = (c) => c && /^https?:\/\/[^\s]+$/.test(c.url || '') && typeof c.token === 'string' && c.token.length > 8;
+
+    function show(c) {
+      // token in the fragment: never sent to the server, never logged
+      frame.src = c.url + '/kiosk?profile=' + encodeURIComponent(c.profile || 'tablet') + '#token=' + encodeURIComponent(c.token);
+      frame.hidden = false;
+      form.hidden = true;
+    }
+    function setup() {
+      frame.hidden = true;
+      frame.removeAttribute('src');
+      form.hidden = false;
+    }
+    // the kiosk page asks for the setup screen with a 5-tap on its clock
+    window.addEventListener('message', (e) => {
+      const c = read();
+      if (!valid(c)) return;
+      if (e.source === frame.contentWindow && e.origin === new URL(c.url).origin && e.data && e.data.scyde === 'setup') setup();
+    });
+
+    const saved = read();
     for (const k of ['url', 'token', 'profile']) if (saved[k]) document.getElementById(k).value = saved[k];
-    document.getElementById('f').addEventListener('submit', async (e) => {
+    if (valid(saved)) show(saved);
+
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const c = { url: document.getElementById('url').value.trim().replace(/\/+$/, ''), token: document.getElementById('token').value.trim(), profile: document.getElementById('profile').value };
       const err = document.getElementById('err');
-      if (!/^https?:\/\//.test(c.url)) { err.textContent = 'URL mora počinjati s http:// ili https://'; return; }
-      err.textContent = 'Provjeravam vezu…';
+      if (!/^https?:\/\//.test(c.url)) { err.textContent = 'The URL must start with http:// or https://'; return; }
+      if (c.token.length < 9) { err.textContent = 'Enter the kiosk token'; return; }
+      err.textContent = 'Checking the connection…';
       try {
-        const r = await fetch(c.url + '/healthz', { cache: 'no-store' });
+        const r = await fetch(c.url + '/healthz', { cache: 'no-store', credentials: 'omit' });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-      } catch (x) { err.textContent = 'Hub nije dostupan: ' + x.message; return; }
+      } catch (x) { err.textContent = 'The Hub is unreachable: ' + x.message; return; }
+      err.textContent = '';
       localStorage.setItem(K, JSON.stringify(c));
-      go(c);
+      show(c);
     });
   </script>
 </body>

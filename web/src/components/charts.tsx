@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { cx } from './ui';
+import { locale } from '../lib/format';
 
 export interface Pt { ts: number; v: number }
 
@@ -53,7 +54,7 @@ export function AreaChart({ series, height = 180, min: fixedMin, max: fixedMax, 
   const t1 = Math.max(...all.map((p) => p.ts));
   const lo = fixedMin ?? Math.min(0, ...all.map((p) => p.v));
   const hi = fixedMax ?? Math.max(...all.map((p) => p.v), lo + 1) * 1.08;
-  if (all.length < 2) return <div className="grid place-items-center text-xs text-muted" style={{ height }}>Još nema dovoljno podataka</div>;
+  if (all.length < 2) return <div className="grid place-items-center text-xs text-muted" style={{ height }}>Not enough data yet</div>;
   const norm = (s: Series) => (s.data.length ? [{ ts: t0, v: s.data[0].v }, ...s.data, { ts: t1, v: s.data[s.data.length - 1].v }] : []);
   const hx = hover === null ? null : t0 + (t1 - t0) * hover;
   const nearest = (s: Series) => {
@@ -96,7 +97,7 @@ export function AreaChart({ series, height = 180, min: fixedMin, max: fixedMax, 
       </div>
       {hover !== null && hx !== null && (
         <div className="glass pointer-events-none absolute top-2 z-10 rounded-xl px-3 py-2 text-xs" style={{ left: `clamp(8px, calc(${hover * 100}% + 12px), calc(100% - 180px))` }}>
-          <div className="mb-1 text-muted">{new Date(hx).toLocaleString('hr-HR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+          <div className="mb-1 text-muted">{new Date(hx).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
           {series.map((s) => {
             const p = nearest(s);
             return p ? (
@@ -131,7 +132,7 @@ export function UptimeBar({ buckets, height = 22 }: { buckets: { ts: number; upt
   return (
     <div className="flex w-full gap-[2px]" style={{ height }}>
       {buckets.map((b) => (
-        <div key={b.ts} title={`${new Date(b.ts).toLocaleString('hr-HR', { day: 'numeric', month: 'short', hour: '2-digit' })}: ${b.uptime === null ? 'nema podataka' : (b.uptime * 100).toFixed(1) + '%'}`}
+        <div key={b.ts} title={`${new Date(b.ts).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit' })}: ${b.uptime === null ? 'no data' : (b.uptime * 100).toFixed(1) + '%'}`}
           className="flex-1 rounded-[2px]"
           style={{ background: b.uptime === null ? 'var(--panel-2)' : b.uptime >= 0.999 ? 'var(--color-ok)' : b.uptime >= 0.95 ? 'var(--color-warn)' : 'var(--color-bad)', opacity: b.uptime === null ? 1 : 0.85 }} />
       ))}

@@ -50,14 +50,14 @@ export function useNow(intervalMs = 1000) {
 /** Shared confirm + audit framework on the client: every action asks first. */
 export async function runAction(instanceId: string, actionId: string, params: Record<string, any> = {}, describe?: string): Promise<boolean> {
   const st = getState();
-  if (st.me?.auth?.kind !== 'admin') { toast('Akcije su dostupne samo adminu (ne u kiosku)', 'info'); return false; }
+  if (st.me?.auth?.kind !== 'admin') { toast('Actions are available to admins only (not in kiosk mode)', 'info'); return false; }
   const inst = st.instances.find((i) => i.id === instanceId);
   const plugin = st.plugins.find((p) => p.id === inst?.plugin);
   const action = plugin?.actions.find((a) => a.id === actionId);
   if (!action) return false;
   const ok = await confirmDialog({
     title: `${action.label}?`,
-    body: <>{describe ? <b className="text-fg">{describe}</b> : null}{describe ? ' — ' : ''}{inst?.name}. {action.description ?? ''} Akcija se zapisuje u audit log.</>,
+    body: <>{describe ? <b className="text-fg">{describe}</b> : null}{describe ? ' — ' : ''}{inst?.name}. {action.description ?? ''} This action is recorded in the audit log.</>,
     danger: action.danger,
     confirmLabel: action.label,
   });
@@ -67,7 +67,7 @@ export async function runAction(instanceId: string, actionId: string, params: Re
     toast(r.message);
     return true;
   } catch (e: any) {
-    toast(e.message ?? 'Akcija nije uspjela', 'bad');
+    toast(e.message ?? 'Action failed', 'bad');
     return false;
   }
 }

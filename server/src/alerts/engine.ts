@@ -33,7 +33,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
         for (const s of instances) {
           if (t.instanceId && t.instanceId !== s.id) continue;
           if (s.status === 'down')
-            out.push({ key: `${rule.id}:${s.id}`, rule, severity: rule.severity, since: s.statusSince, title: `${s.name} je nedostupan`, message: s.error ?? 'Servis ne odgovara' });
+            out.push({ key: `${rule.id}:${s.id}`, rule, severity: rule.severity, since: s.statusSince, title: `${s.name} is unreachable`, message: s.error ?? 'Service is not responding' });
         }
         break;
       case 'check_down':
@@ -41,7 +41,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
           if (t.checkId && t.checkId !== c.id) continue;
           if (c.type === 'ssl' && !t.checkId) continue; // cert problems handled by cert_expiry
           if (c.enabled && c.ok === false)
-            out.push({ key: `${rule.id}:${c.id}`, rule, severity: rule.severity, since: c.statusSince, title: `${c.name} ne prolazi provjeru`, message: c.message ?? `${c.type.toUpperCase()} ${c.target}` });
+            out.push({ key: `${rule.id}:${c.id}`, rule, severity: rule.severity, since: c.statusSince, title: `${c.name} is failing its check`, message: c.message ?? `${c.type.toUpperCase()} ${c.target}` });
         }
         break;
       case 'cert_expiry':
@@ -50,7 +50,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
           const days = Number((c.extra as any)?.daysLeft);
           const limit = Number(t.days ?? 14);
           if (Number.isFinite(days) && days < limit)
-            out.push({ key: `${rule.id}:${c.id}`, rule, severity: days < 3 ? 'critical' : rule.severity, since: now - rule.duration_sec * 1000, title: `Certifikat ${c.target} ističe`, message: days < 0 ? 'Certifikat je istekao' : `Ističe za ${days} dana` });
+            out.push({ key: `${rule.id}:${c.id}`, rule, severity: days < 3 ? 'critical' : rule.severity, since: now - rule.duration_sec * 1000, title: `Certificate for ${c.target} is expiring`, message: days < 0 ? 'Certificate has expired' : `Expires in ${days} days` });
         }
         break;
       case 'metric':
@@ -62,7 +62,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
           const key = `${rule.id}:${s.id}:${t.metric}`;
           if (hit) {
             if (!pending.has(key)) pending.set(key, now);
-            out.push({ key, rule, severity: rule.severity, since: pending.get(key)!, title: `${s.name}: ${t.label || t.metric} ${t.op ?? '>'} ${t.value}`, message: `Trenutno: ${Math.round(v * 10) / 10}` });
+            out.push({ key, rule, severity: rule.severity, since: pending.get(key)!, title: `${s.name}: ${t.label || t.metric} ${t.op ?? '>'} ${t.value}`, message: `Current: ${Math.round(v * 10) / 10}` });
           } else pending.delete(key);
         }
         break;
@@ -126,7 +126,7 @@ export async function tick() {
     if (!maintenance && rule) {
       const ch = json<string[]>(rule.channels, []);
       const mins = Math.max(1, Math.round((now - inc.started_at) / 60000));
-      void sendTo(ch.length ? ch : 'all', { title: `Riješeno: ${inc.title}`, message: `Trajalo ${mins} min`, severity: inc.severity, resolved: true });
+      void sendTo(ch.length ? ch : 'all', { title: `Resolved: ${inc.title}`, message: `Lasted ${mins} min`, severity: inc.severity, resolved: true });
     }
   }
 }
@@ -144,10 +144,10 @@ export function seedDefaultRules() {
   const add = (name: string, type: RuleType, target: object, severity: Severity, duration: number) =>
     q.run('INSERT INTO alert_rules (id, name, type, target, severity, duration_sec, channels, enabled, created_at) VALUES (?,?,?,?,?,?,?,1,?)',
       randomId(), name, type, JSON.stringify(target), severity, duration, '[]', Date.now());
-  add('Servis nedostupan', 'instance_down', {}, 'critical', 120);
-  add('Provjera ne prolazi', 'check_down', {}, 'critical', 120);
-  add('Certifikat ističe', 'cert_expiry', { days: 14 }, 'warning', 0);
-  add('Upozorenja servisa (health, backup, indexeri)', 'plugin_alert', { minSeverity: 'warning' }, 'warning', 300);
+  add('Service unreachable', 'instance_down', {}, 'critical', 120);
+  add('Check failing', 'check_down', {}, 'critical', 120);
+  add('Certificate expiring', 'cert_expiry', { days: 14 }, 'warning', 0);
+  add('Service warnings (health, backup, indexers)', 'plugin_alert', { minSeverity: 'warning' }, 'warning', 300);
 }
 
 let timer: NodeJS.Timeout | undefined;

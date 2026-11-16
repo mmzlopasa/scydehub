@@ -21,10 +21,10 @@ notify() {
 
 fails=$(cat "$STATE" 2>/dev/null || echo 0)
 if curl -fsS -m 10 "$HUB_URL/healthz" >/dev/null 2>&1; then
-  if [ "$fails" -ge "$LIMIT" ]; then notify "SCYDE Hub je ponovno online" "$HUB_URL odgovara."; fi
+  if [ "$fails" -ge "$LIMIT" ]; then notify "SCYDE Hub is back online" "$HUB_URL is responding again."; fi
   echo 0 > "$STATE"
 else
   fails=$((fails + 1))
   echo "$fails" > "$STATE"
-  if [ "$fails" -eq "$LIMIT" ]; then notify "SCYDE Hub je nedostupan" "$HUB_URL ne odgovara ${LIMIT} min — možda je pao Proxmox host."; fi
+  if [ "$fails" -eq "$LIMIT" ]; then notify "SCYDE Hub is unreachable" "$HUB_URL has not answered for ${LIMIT} min — the Proxmox host may be down."; fi
 fi

@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, AlertTriangle, Info } from 'lucide-react';
-import { Button, Modal, cx } from './ui';
+import { CheckCircle2, AlertTriangle, Info, ShieldCheck } from 'lucide-react';
+import { Button, Input, Modal, cx } from './ui';
+import { setSudoPrompt } from '../lib/api';
 
 // ---------- toasts ----------
 type Toast = { id: number; tone: 'ok' | 'bad' | 'info'; text: string };
@@ -19,7 +20,7 @@ export function Toaster() {
   return createPortal(
     <div className="pointer-events-none fixed bottom-4 right-4 z-[70] flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2">
       {toasts.map((t) => (
-        <div key={t.id} className="glass animate-pop pointer-events-auto flex items-start gap-3 rounded-2xl px-4 py-3 text-sm" style={{ background: 'color-mix(in oklab, var(--bg) 85%, transparent)' }}>
+        <div key={t.id} className="pop animate-pop pointer-events-auto flex items-start gap-3 rounded-2xl px-4 py-3 text-sm">
           {t.tone === 'ok' ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" /> : t.tone === 'bad' ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-bad" /> : <Info className="mt-0.5 size-4 shrink-0 text-info" />}
           <div className="min-w-0 break-words">{t.text}</div>
         </div>
@@ -47,10 +48,50 @@ export function ConfirmHost() {
   return (
     <Modal open={!!c} onClose={() => close(false)} title={c?.title}
       footer={<>
-        <Button variant="ghost" onClick={() => close(false)}>Odustani</Button>
-        <Button autoFocus variant={c?.danger ? 'danger' : 'primary'} onClick={() => close(true)}>{c?.confirmLabel ?? 'Potvrdi'}</Button>
+        <Button variant="ghost" onClick={() => close(false)}>Cancel</Button>
+        <Button autoFocus variant={c?.danger ? 'danger' : 'primary'} onClick={() => close(true)}>{c?.confirmLabel ?? 'Confirm'}</Button>
       </>}>
-      <div className={cx('text-sm text-muted')}>{c?.body ?? 'Jesi li siguran?'}</div>
+      <div className={cx('text-sm text-muted')}>{c?.body ?? 'Are you sure?'}</div>
+    </Modal>
+  );
+}
+
+// ---------- password re-confirmation ("sudo") ----------
+let sudoResolve: ((v: boolean) => void) | null = null;
+/** Sensitive requests answer 403 {sudo:true}; lib/api.ts calls this, shows the dialog and retries. */
+export function SudoHost() {
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setSudoPrompt(() => new Promise<boolean>((resolve) => {
+      sudoResolve?.(false);
+      sudoResolve = resolve;
+      setPw(''); setErr(''); setOpen(true);
+    }));
+    return () => setSudoPrompt(null);
+  }, []);
+  const done = (v: boolean) => { setOpen(false); sudoResolve?.(v); sudoResolve = null; };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      const r = await fetch('/api/auth/sudo', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-scyde': '1' }, body: JSON.stringify({ password: pw }) });
+      if (r.ok) done(true); else setErr((await r.json().catch(() => ({}))).error ?? 'Wrong password');
+    } catch { setErr('Network error'); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open={open} onClose={() => done(false)} title={<span className="flex items-center gap-2"><ShieldCheck className="size-4 text-accent" />Confirm it's you</span>}>
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm text-muted">This action can expose or redirect stored credentials, or change something that is hard to undo. Enter your password to continue — you won't be asked again for 10 minutes.</p>
+        <Input type="password" autoFocus autoComplete="current-password" placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        {err && <div className="rounded-xl bg-bad/10 px-3 py-2 text-sm text-bad">{err}</div>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => done(false)}>Cancel</Button>
+          <Button type="submit" variant="primary" loading={busy}>Continue</Button>
+        </div>
+      </form>
     </Modal>
   );
 }

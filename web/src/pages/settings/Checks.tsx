@@ -8,11 +8,11 @@ import { CheckDetails } from '../../components/DetailPanel';
 import { PageHead, Card } from './Settings';
 
 const TYPES = [
-  { v: 'ping', l: 'Ping (ICMP)', target: 'Host ili IP', ph: '192.168.1.10' },
+  { v: 'ping', l: 'Ping (ICMP)', target: 'Host or IP', ph: '192.168.1.10' },
   { v: 'tcp', l: 'TCP port', target: 'host:port', ph: '192.168.1.20:5055' },
-  { v: 'http', l: 'HTTP(S) status / ključna riječ', target: 'URL', ph: 'https://streamero.example.com' },
-  { v: 'ssl', l: 'SSL certifikat', target: 'Domena[:port]', ph: 'vault.example.com' },
-  { v: 'dns', l: 'DNS', target: 'Ime za resolve', ph: 'example.com' },
+  { v: 'http', l: 'HTTP(S) status / keyword', target: 'URL', ph: 'https://streamero.example.com' },
+  { v: 'ssl', l: 'SSL certificate', target: 'Domain[:port]', ph: 'vault.example.com' },
+  { v: 'dns', l: 'DNS', target: 'Name to resolve', ph: 'example.com' },
 ];
 
 function CheckForm({ check, onClose }: { check?: any; onClose: () => void }) {
@@ -22,41 +22,41 @@ function CheckForm({ check, onClose }: { check?: any; onClose: () => void }) {
   const setO = (k: string, v: any) => setF((s: any) => ({ ...s, options: { ...s.options, [k]: v } }));
   const t = TYPES.find((x) => x.v === f.type)!;
   const save = async () => {
-    if (!f.name || !f.target) return toast('Naziv i cilj su obavezni', 'bad');
+    if (!f.name || !f.target) return toast('Name and target are required', 'bad');
     try {
       if (check) await patch(`/api/checks/${check.id}`, f); else await post('/api/checks', f);
-      toast('Spremljeno'); onClose();
+      toast('Saved'); onClose();
     } catch (e: any) { toast(e.message, 'bad'); }
   };
   return (
-    <Modal open onClose={onClose} title={check ? 'Uredi provjeru' : 'Nova provjera'} footer={<><Button variant="ghost" onClick={onClose}>Odustani</Button><Button variant="primary" onClick={save}>Spremi</Button></>}>
+    <Modal open onClose={onClose} title={check ? 'Edit check' : 'New check'} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="space-y-3">
-        <Label><span className="text-xs font-medium text-muted">Naziv</span><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Label>
-        <Label><span className="text-xs font-medium text-muted">Tip</span><select className={inputCls} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></Label>
+        <Label><span className="text-xs font-medium text-muted">Name</span><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Label>
+        <Label><span className="text-xs font-medium text-muted">Type</span><select className={inputCls} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}</select></Label>
         <Label><span className="text-xs font-medium text-muted">{t.target}</span><Input value={f.target} placeholder={t.ph} onChange={(e) => setF({ ...f, target: e.target.value })} /></Label>
         {f.type === 'http' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <Label><span className="text-xs font-medium text-muted">Očekivani status</span><Input value={o.expectStatus ?? ''} placeholder="200-399" onChange={(e) => setO('expectStatus', e.target.value)} /></Label>
-            <Label><span className="text-xs font-medium text-muted">Ključna riječ</span><Input value={o.keyword ?? ''} onChange={(e) => setO('keyword', e.target.value)} /></Label>
-            <Toggle checked={!!o.invertKeyword} onChange={(v) => setO('invertKeyword', v)} label="Greška ako riječ POSTOJI" />
-            <Toggle checked={!!o.insecure} onChange={(v) => setO('insecure', v)} label="Prihvati self-signed (samo ova provjera)" />
+            <Label><span className="text-xs font-medium text-muted">Expected status</span><Input value={o.expectStatus ?? ''} placeholder="200-399" onChange={(e) => setO('expectStatus', e.target.value)} /></Label>
+            <Label><span className="text-xs font-medium text-muted">Keyword</span><Input value={o.keyword ?? ''} onChange={(e) => setO('keyword', e.target.value)} /></Label>
+            <Toggle checked={!!o.invertKeyword} onChange={(v) => setO('invertKeyword', v)} label="Fail if the keyword IS present" />
+            <Toggle checked={!!o.insecure} onChange={(v) => setO('insecure', v)} label="Accept self-signed (this check only)" />
           </div>
         )}
-        {f.type === 'ssl' && <Label><span className="text-xs font-medium text-muted">Upozori kad ističe za (dana)</span><Input type="number" value={o.warnDays ?? 14} onChange={(e) => setO('warnDays', Number(e.target.value))} /></Label>}
+        {f.type === 'ssl' && <Label><span className="text-xs font-medium text-muted">Warn when expiring within (days)</span><Input type="number" value={o.warnDays ?? 14} onChange={(e) => setO('warnDays', Number(e.target.value))} /></Label>}
         {f.type === 'dns' && (
           <div className="grid gap-3 sm:grid-cols-3">
             <Label><span className="text-xs font-medium text-muted">DNS server</span><Input value={o.server ?? ''} placeholder="192.168.1.2" onChange={(e) => setO('server', e.target.value)} /></Label>
-            <Label><span className="text-xs font-medium text-muted">Zapis</span><Input value={o.recordType ?? 'A'} onChange={(e) => setO('recordType', e.target.value)} /></Label>
-            <Label><span className="text-xs font-medium text-muted">Očekuj</span><Input value={o.expect ?? ''} onChange={(e) => setO('expect', e.target.value)} /></Label>
+            <Label><span className="text-xs font-medium text-muted">Record</span><Input value={o.recordType ?? 'A'} onChange={(e) => setO('recordType', e.target.value)} /></Label>
+            <Label><span className="text-xs font-medium text-muted">Expect</span><Input value={o.expect ?? ''} onChange={(e) => setO('expect', e.target.value)} /></Label>
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Label><span className="text-xs font-medium text-muted">Interval (s)</span><Input type="number" min={10} value={f.interval_sec} onChange={(e) => setF({ ...f, interval_sec: Number(e.target.value) })} /></Label>
-          <Label><span className="text-xs font-medium text-muted">Veži uz servis</span>
-            <select className={inputCls} value={f.instance_id ?? ''} onChange={(e) => setF({ ...f, instance_id: e.target.value || null })}><option value="">— samostalna —</option>{instances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+          <Label><span className="text-xs font-medium text-muted">Link to service</span>
+            <select className={inputCls} value={f.instance_id ?? ''} onChange={(e) => setF({ ...f, instance_id: e.target.value || null })}><option value="">— standalone —</option>{instances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
           </Label>
         </div>
-        <div className="flex gap-6"><Toggle checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} label="Uključena" /><Toggle checked={!!o.mock} onChange={(v) => setO('mock', v)} label="Mock" /></div>
+        <div className="flex gap-6"><Toggle checked={f.enabled} onChange={(v) => setF({ ...f, enabled: v })} label="Enabled" /><Toggle checked={!!o.mock} onChange={(v) => setO('mock', v)} label="Mock" /></div>
       </div>
     </Modal>
   );
@@ -68,11 +68,12 @@ export function Checks() {
   const [edit, setEdit] = useState<any | null | undefined>(undefined);
   const [open, setOpen] = useState<string | null>(null);
   const load = () => get('/api/checks').then(setRows);
-  useEffect(() => { load(); }, [states]);
+  const idsKey = Object.keys(states).sort().join(',');
+  useEffect(() => { void load(); }, [idsKey]);
   return (
     <>
-      <PageHead title="Provjere" desc="Vlastiti uptime monitoring: ping, TCP, HTTP s ključnom riječi, istek SSL-a i DNS. Latencija ide u povijest, uptime se računa za 24 h, 7 i 30 dana."
-        right={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEdit(null)}>Nova provjera</Button>} />
+      <PageHead title="Checks" desc="Built-in uptime monitoring: ping, TCP, HTTP with keyword, SSL expiry and DNS. Latency is kept in history; uptime is calculated for 24 h, 7 and 30 days."
+        right={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEdit(null)}>New check</Button>} />
       <div className="space-y-2">
         {rows.map((c) => {
           const s = states[c.id];
@@ -81,19 +82,19 @@ export function Checks() {
               <div className="flex items-center gap-3">
                 <StatusDot status={s?.ok ?? null} />
                 <button className="min-w-0 flex-1 text-left" onClick={() => setOpen(open === c.id ? null : c.id)}>
-                  <div className="flex items-center gap-2 font-medium">{c.name}<Badge>{c.type.toUpperCase()}</Badge>{!c.enabled && <Badge>isključena</Badge>}</div>
+                  <div className="flex items-center gap-2 font-medium">{c.name}<Badge>{c.type.toUpperCase()}</Badge>{!c.enabled && <Badge>disabled</Badge>}</div>
                   <div className="truncate text-xs text-muted">{c.target} · {s?.message ?? '—'} · 24 h: {s?.uptime?.d1 ?? '—'}%</div>
                 </button>
                 <span className="num text-sm">{s?.latencyMs != null ? `${Math.round(s.latencyMs)} ms` : ''}</span>
-                <Button size="sm" variant="ghost" icon={<Play className="size-3.5" />} onClick={() => post(`/api/checks/${c.id}/run`).then(() => toast('Provjera pokrenuta'))} />
+                <Button size="sm" variant="ghost" icon={<Play className="size-3.5" />} onClick={() => post(`/api/checks/${c.id}/run`).then(() => toast('Check started'))} />
                 <Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(c)} />
-                <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Obriši ${c.name}?`, danger: true, confirmLabel: 'Obriši' })) { await del(`/api/checks/${c.id}`); load(); } }} />
+                <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete ${c.name}?`, danger: true, confirmLabel: 'Delete' })) { await del(`/api/checks/${c.id}`); load(); } }} />
               </div>
               {open === c.id && s && <div className="mt-3"><CheckDetails c={s} /></div>}
             </Card>
           );
         })}
-        {!rows.length && <Card><div className="py-6 text-center text-sm text-muted">Nema provjera.</div></Card>}
+        {!rows.length && <Card><div className="py-6 text-center text-sm text-muted">No checks.</div></Card>}
       </div>
       {edit !== undefined && <CheckForm check={edit ?? undefined} onClose={() => { setEdit(undefined); load(); }} />}
     </>

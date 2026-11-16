@@ -15,7 +15,7 @@ function finish(d: BazarrData) {
   ];
   return {
     status: d.health.length ? ('degraded' as const) : ('up' as const),
-    summary: `${d.wantedEpisodes + d.wantedMovies} titlova nedostaje`,
+    summary: `${d.wantedEpisodes + d.wantedMovies} subtitles missing`,
     data: d, alerts,
     metrics: { wanted_episodes: d.wantedEpisodes, wanted_movies: d.wantedMovies, throttled: d.throttledProviders },
   };
@@ -23,7 +23,7 @@ function finish(d: BazarrData) {
 
 export const bazarr: Plugin<Cfg, BazarrData> = {
   id: 'bazarr', name: 'Bazarr', icon: 'bazarr', category: 'media',
-  description: 'Titlovi koji nedostaju, zadnja preuzimanja, stanje providera.',
+  description: 'Missing subtitles, recent downloads, provider status.',
   docsUrl: 'https://wiki.bazarr.media/',
   defaultInterval: 120,
   fields: [urlField('http://192.168.1.20:6767'), apiKeyField(), ...tlsFields],
@@ -50,7 +50,7 @@ export const bazarr: Plugin<Cfg, BazarrData> = {
   mock() {
     return finish({
       version: '1.5.3', wantedEpisodes: 23, wantedMovies: 7, throttledProviders: 1,
-      providers: [{ name: 'opensubtitlescom', status: 'Good' }, { name: 'podnapisi', status: 'Good' }, { name: 'titlovi', status: 'TooManyRequests', retry: 'za 2 h' }],
+      providers: [{ name: 'opensubtitlescom', status: 'Good' }, { name: 'podnapisi', status: 'Good' }, { name: 'titlovi', status: 'TooManyRequests', retry: 'in 2 h' }],
       health: [],
       history: [
         { title: 'Severance', subtitle: '2x07 Chikhai Bardo', language: 'Croatian', provider: 'opensubtitlescom', timestamp: '2 h' },
@@ -60,7 +60,7 @@ export const bazarr: Plugin<Cfg, BazarrData> = {
     });
   },
   actions: [
-    { id: 'resetProviders', label: 'Resetiraj throttle providera', run: async ({ http }) => { await http.request('/api/providers', { method: 'POST', form: { action: 'reset' } }); return 'Provideri resetirani'; } },
+    { id: 'resetProviders', label: 'Reset provider throttling', run: async ({ http }) => { await http.request('/api/providers', { method: 'POST', form: { action: 'reset' } }); return 'Providers reset'; } },
   ],
-  widgets: [{ id: 'subtitles', name: 'Bazarr titlovi', description: 'Nedostaje, provideri, zadnja preuzimanja', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
+  widgets: [{ id: 'subtitles', name: 'Bazarr subtitles', description: 'Missing, providers, recent downloads', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
 };

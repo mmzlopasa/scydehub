@@ -27,16 +27,18 @@ export interface CoreWidgetDef {
 }
 
 export type WidgetComponent = ComponentType<WidgetProps>;
+/** default footprint per size on the 24-column grid */
 export const SIZE_GRID: Record<Size, { w: number; h: number }> = {
-  S: { w: 3, h: 3 },
-  M: { w: 4, h: 4 },
-  L: { w: 6, h: 5 },
-  XL: { w: 12, h: 5 },
+  S: { w: 6, h: 6 },
+  M: { w: 8, h: 8 },
+  L: { w: 12, h: 10 },
+  XL: { w: 24, h: 10 },
 };
+/** How much detail a widget shows follows the space it actually has. */
 export function sizeFromGrid(w: number, h: number, cols: number): Size {
-  const rel = (w / cols) * 12;
-  if (rel >= 9 && h >= 4) return 'XL';
-  if (rel >= 6 && h >= 4) return 'L';
-  if (rel <= 3 || h <= 2) return 'S';
+  const rel = (w / cols) * 24;
+  if (rel >= 18 && h >= 8) return 'XL';
+  if (rel >= 11 && h >= 8) return 'L';
+  if (rel <= 6 || h <= 5) return 'S';
   return 'M';
 }

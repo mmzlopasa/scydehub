@@ -5,7 +5,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { err?: Er
   static getDerivedStateFromError(err: Error) { return { err }; }
   componentDidCatch(err: Error) { console.error('[widget]', err); }
   render() {
-    if (this.state.err) return <div className="grid h-full place-items-center text-center text-xs text-bad">Widget se srušio: {this.state.err.message}</div>;
+    if (this.state.err) return <div className="grid h-full place-items-center text-center text-xs text-bad">Widget crashed: {this.state.err.message}</div>;
     return this.props.children;
   }
 }

@@ -1,6 +1,6 @@
 # Mediarr → SCYDE Hub (`/api/stats`)
 
-`GET /api/stats` — header `X-Api-Key: <ključ>` (opcionalno)
+`GET /api/stats` — header `X-Api-Key: <key>` (optional)
 
 ```json
 {
@@ -14,5 +14,5 @@
 }
 ```
 
-Ako je Mediarr samo sučelje oko Immicha, umjesto ovoga dodaj **Immich** integraciju
-(službeni API, admin API ključ s dozvolama `server.statistics` i `queue.read`).
+If Mediarr is only a front end for Immich, add the **Immich** integration instead
+(official API, admin API key with the `server.statistics` and `queue.read` permissions).

@@ -36,9 +36,15 @@ export const config = {
    * (Forcing it breaks logins over plain http://<ip>:8484 — browsers drop Secure cookies on HTTP.)
    */
   secureCookies: process.env.SCYDE_SECURE_COOKIES === 'force',
-  trustProxy: process.env.SCYDE_TRUST_PROXY ?? 'loopback,uniquelocal',
+  /**
+   * Which peers may set X-Forwarded-For / X-Forwarded-Proto. Default: loopback + Docker bridge networks
+   * (nginx / cloudflared running on the same host). LAN clients are NOT trusted, so they cannot spoof their
+   * IP to dodge rate limits. If your reverse proxy lives on another machine, set its IP/CIDR here.
+   */
+  trustProxy: process.env.SCYDE_TRUST_PROXY ?? 'loopback,172.16.0.0/12',
   webDir: process.env.SCYDE_WEB_DIR ?? resolve(process.cwd(), '../web/dist'),
-  version: process.env.SCYDE_VERSION ?? '0.1.0',
-  buildId: process.env.SCYDE_BUILD_ID ?? String(Date.now()),
+  version: process.env.SCYDE_VERSION ?? '0.2.0',
+  // 'dev' (local docker build without BUILD_ID) falls back to the start time, so kiosks still reload after an update
+  buildId: process.env.SCYDE_BUILD_ID && process.env.SCYDE_BUILD_ID !== 'dev' ? process.env.SCYDE_BUILD_ID : String(Date.now()),
   iconCdn: process.env.SCYDE_ICON_CDN ?? 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons',
 };

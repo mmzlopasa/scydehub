@@ -32,6 +32,8 @@ const timers = new Map<string, NodeJS.Timeout>();
 const scratch = new Map<string, Record<string, any>>();
 const ticks = new Map<string, number>();
 const running = new Set<string>();
+/** bumped on every (re)schedule; a poll loop exits as soon as its generation is stale */
+const generation = new Map<string, number>();
 const listeners: ((s: InstanceState, prev?: InstanceState) => void)[] = [];
 
 export const onInstanceState = (fn: (s: InstanceState, prev?: InstanceState) => void) => listeners.push(fn);
@@ -42,20 +44,21 @@ export function isMock(row: InstanceRow) {
   return config.mockAll || row.mock === 1;
 }
 
-export function contextFor(row: InstanceRow): PluginContext {
+/** `ephemeral`: one-off context (connection test) that leaves no scratch state behind. */
+export function contextFor(row: InstanceRow, ephemeral = false): PluginContext {
   const plugin = getPlugin(row.plugin)!;
   const cfg = decryptedConfig(row);
   const httpDefaults = plugin.http?.(cfg) ?? {};
   const baseUrl = (httpDefaults.baseUrl ?? cfg.url ?? 'http://localhost').replace(/\/+$/, '');
-  if (!scratch.has(row.id)) scratch.set(row.id, {});
-  const tick = (ticks.get(row.id) ?? 0) + 1;
-  ticks.set(row.id, tick);
+  if (!ephemeral && !scratch.has(row.id)) scratch.set(row.id, {});
+  const tick = ephemeral ? 1 : (ticks.get(row.id) ?? 0) + 1;
+  if (!ephemeral) ticks.set(row.id, tick);
   return {
     instanceId: row.id,
     instanceName: row.name,
     config: cfg,
     http: createHttpClient(baseUrl, { headers: httpDefaults.headers, tls: tlsFrom(cfg), timeoutMs: Number(cfg.timeoutMs) || 10_000 }),
-    scratch: scratch.get(row.id)!,
+    scratch: ephemeral ? {} : scratch.get(row.id)!,
     tick,
     log: (m) => console.log(`[${row.plugin}:${row.name}] ${m}`),
   };
@@ -115,8 +118,14 @@ export async function collectOnce(id: string): Promise<InstanceState | undefined
   } finally {
     running.delete(id);
   }
+  // the instance may have been deleted (or the whole config restored) while the poll was in flight
+  if (!getInstance(id)) return undefined;
   states.set(id, next);
-  persist(next);
+  try {
+    persist(next);
+  } catch (e) {
+    console.error(`[collector] could not persist state of ${id}:`, (e as Error).message);
+  }
   bus.publish({ type: 'instance', id, state: next });
   for (const l of listeners) {
     try { l(next, prev); } catch (e) { console.error('[collector] listener error', e); }
@@ -126,6 +135,8 @@ export async function collectOnce(id: string): Promise<InstanceState | undefined
 
 function schedule(row: InstanceRow) {
   unschedule(row.id);
+  const gen = (generation.get(row.id) ?? 0) + 1;
+  generation.set(row.id, gen);
   if (!row.enabled) {
     const s: InstanceState = {
       id: row.id, plugin: row.plugin, name: row.name, status: 'disabled', updatedAt: Date.now(), statusSince: Date.now(),
@@ -136,9 +147,14 @@ function schedule(row: InstanceRow) {
     return;
   }
   const loop = async () => {
-    await collectOnce(row.id);
+    try {
+      await collectOnce(row.id);
+    } catch (e) {
+      console.error(`[collector] ${row.id}:`, (e as Error).message);
+    }
+    if (generation.get(row.id) !== gen) return; // rescheduled or removed meanwhile
     const fresh = getInstance(row.id);
-    if (fresh?.enabled) timers.set(row.id, setTimeout(loop, fresh.interval_sec * 1000));
+    if (fresh?.enabled) timers.set(row.id, setTimeout(loop, Math.min(86_400, Math.max(5, fresh.interval_sec)) * 1000));
   };
   // stagger start-up so we don't hit everything in the same millisecond
   timers.set(row.id, setTimeout(loop, Math.random() * 1500));
@@ -153,8 +169,10 @@ export function reschedule(id: string) {
   const row = getInstance(id);
   if (!row) {
     unschedule(id);
+    generation.set(id, (generation.get(id) ?? 0) + 1);
     states.delete(id);
     scratch.delete(id);
+    ticks.delete(id);
     return;
   }
   scratch.delete(id); // config may have changed (new credentials)
@@ -171,6 +189,16 @@ export function startCollector() {
       statusSince: r.status_since, latencyMs: r.latency_ms ?? undefined, mock: !!r.mock, stale: true,
     });
   }
+  for (const row of listInstances()) schedule(row);
+}
+
+/** After a restore: forget everything in memory and start again from the database. */
+export function resetCollector() {
+  for (const id of [...timers.keys()]) unschedule(id);
+  for (const id of [...generation.keys()]) generation.set(id, (generation.get(id) ?? 0) + 1);
+  states.clear();
+  scratch.clear();
+  ticks.clear();
   for (const row of listInstances()) schedule(row);
 }
 

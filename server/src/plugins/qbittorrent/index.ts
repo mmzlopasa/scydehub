@@ -17,13 +17,13 @@ async function login(ctx: PluginContext<Cfg>) {
   if (c.apiKey) return; // 5.2+ API key: sent as header, no session
   const origin = new URL(http.baseUrl).origin;
   const r = await http.raw('/api/v2/auth/login', { method: 'POST', form: { username: c.username ?? '', password: c.password ?? '' }, headers: { Referer: origin, Origin: origin } });
-  if (r.status === 403) throw new Error('qBittorrent je blokirao IP (previše neuspjelih prijava)');
-  if (r.status >= 400 || /Fails/i.test(r.text)) throw new Error('Prijava u qBittorrent nije uspjela');
+  if (r.status === 403) throw new Error('qBittorrent banned this IP (too many failed logins)');
+  if (r.status >= 400 || /Fails/i.test(r.text)) throw new Error('qBittorrent login failed');
   // cookie name is SID (<5.2) or QBT_SID_<port> (5.2+) — keep whatever we got
   const cookies = (r.headers as any).getSetCookie?.() as string[] | undefined;
   const list = cookies?.length ? cookies : [r.headers.get('set-cookie') ?? ''];
   scratch.cookie = list.map((x) => x.split(';')[0]).filter(Boolean).join('; ');
-  if (!scratch.cookie) throw new Error('qBittorrent nije vratio session cookie');
+  if (!scratch.cookie) throw new Error('qBittorrent did not return a session cookie');
 }
 
 async function api<T>(ctx: PluginContext<Cfg>, path: string, opts: { method?: string; form?: Record<string, string>; text?: boolean; query?: Record<string, string> } = {}): Promise<T> {
@@ -48,10 +48,10 @@ async function api<T>(ctx: PluginContext<Cfg>, path: string, opts: { method?: st
 function finish(d: QbtData) {
   return {
     status: d.connection === 'disconnected' ? ('degraded' as const) : ('up' as const),
-    summary: `↓ ${fmt(d.dlSpeed)}/s · ↑ ${fmt(d.upSpeed)}/s · ${d.downloading} aktivno`,
+    summary: `↓ ${fmt(d.dlSpeed)}/s · ↑ ${fmt(d.upSpeed)}/s · ${d.downloading} active`,
     data: d,
     metrics: { dl: d.dlSpeed, up: d.upSpeed, downloading: d.downloading, seeding: d.seeding, ...(d.freeSpace !== undefined ? { free: d.freeSpace } : {}) },
-    alerts: d.errored ? [{ key: 'errored', severity: 'warning' as const, message: `${d.errored} torrenta s greškom` }] : [],
+    alerts: d.errored ? [{ key: 'errored', severity: 'warning' as const, message: `Torrents with errors: ${d.errored}` }] : [],
   };
 }
 const fmt = (b: number) => (b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : (b / 1e3).toFixed(0) + ' kB');
@@ -67,14 +67,14 @@ async function legacy(ctx: PluginContext<Cfg>) {
 
 export const qbittorrent: Plugin<Cfg, QbtData> = {
   id: 'qbittorrent', name: 'qBittorrent', icon: 'qbittorrent', category: 'downloads',
-  description: 'Brzine uživo, aktivni torrenti s progresom i ETA, seeding, slobodan disk; pauziraj/nastavi.',
+  description: 'Live speeds, active torrents with progress and ETA, seeding, free disk space; pause/resume.',
   docsUrl: 'https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-5.0)',
   defaultInterval: 5,
   fields: [
     urlField('http://192.168.1.20:8080'),
-    { key: 'username', label: 'Korisnik', type: 'string' },
-    { key: 'password', label: 'Lozinka', type: 'secret' },
-    { key: 'apiKey', label: 'API ključ (qBittorrent 5.2+, umjesto lozinke)', type: 'secret' },
+    { key: 'username', label: 'Username', type: 'string' },
+    { key: 'password', label: 'Password', type: 'secret' },
+    { key: 'apiKey', label: 'API key (qBittorrent 5.2+, instead of password)', type: 'secret' },
     ...tlsFields,
   ],
   async collect(ctx) {
@@ -116,26 +116,26 @@ export const qbittorrent: Plugin<Cfg, QbtData> = {
   },
   actions: [
     {
-      id: 'pauseAll', label: 'Pauziraj sve',
-      run: async (ctx) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'pause' : 'stop'}`, { method: 'POST', form: { hashes: 'all' } }); return 'Svi torrenti pauzirani'; },
-      mock: (ctx) => { ctx.scratch.mockPaused = true; return 'Pauzirano (mock)'; },
+      id: 'pauseAll', label: 'Pause all',
+      run: async (ctx) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'pause' : 'stop'}`, { method: 'POST', form: { hashes: 'all' } }); return 'All torrents paused'; },
+      mock: (ctx) => { ctx.scratch.mockPaused = true; return 'Paused (mock)'; },
     },
     {
-      id: 'resumeAll', label: 'Nastavi sve',
-      run: async (ctx) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'resume' : 'start'}`, { method: 'POST', form: { hashes: 'all' } }); return 'Svi torrenti nastavljeni'; },
-      mock: (ctx) => { ctx.scratch.mockPaused = false; return 'Nastavljeno (mock)'; },
+      id: 'resumeAll', label: 'Resume all',
+      run: async (ctx) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'resume' : 'start'}`, { method: 'POST', form: { hashes: 'all' } }); return 'All torrents resumed'; },
+      mock: (ctx) => { ctx.scratch.mockPaused = false; return 'Resumed (mock)'; },
     },
     {
-      id: 'pause', label: 'Pauziraj torrent', params: [{ key: 'hash', label: 'Hash', type: 'string', required: true }],
-      run: async (ctx, p) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'pause' : 'stop'}`, { method: 'POST', form: { hashes: String(p.hash) } }); return 'Pauzirano'; },
+      id: 'pause', label: 'Pause torrent', params: [{ key: 'hash', label: 'Hash', type: 'string', required: true }],
+      run: async (ctx, p) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'pause' : 'stop'}`, { method: 'POST', form: { hashes: String(p.hash) } }); return 'Paused'; },
     },
     {
-      id: 'resume', label: 'Nastavi torrent', params: [{ key: 'hash', label: 'Hash', type: 'string', required: true }],
-      run: async (ctx, p) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'resume' : 'start'}`, { method: 'POST', form: { hashes: String(p.hash) } }); return 'Nastavljeno'; },
+      id: 'resume', label: 'Resume torrent', params: [{ key: 'hash', label: 'Hash', type: 'string', required: true }],
+      run: async (ctx, p) => { const l = await legacy(ctx); await api(ctx, `/api/v2/torrents/${l ? 'resume' : 'start'}`, { method: 'POST', form: { hashes: String(p.hash) } }); return 'Resumed'; },
     },
   ],
   widgets: [
-    { id: 'transfer', name: 'qBittorrent brzine', description: 'Download/upload uživo s grafom', sizes: ['S', 'M', 'L'], defaultSize: 'S' },
-    { id: 'torrents', name: 'qBittorrent torrenti', description: 'Aktivni torrenti s progresom i ETA', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
+    { id: 'transfer', name: 'qBittorrent speeds', description: 'Live download/upload with chart', sizes: ['S', 'M', 'L'], defaultSize: 'S' },
+    { id: 'torrents', name: 'qBittorrent torrents', description: 'Active torrents with progress and ETA', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
   ],
 };

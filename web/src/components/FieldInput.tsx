@@ -15,7 +15,7 @@ export function FieldInput({ field: f, value, onChange, compact }: { field: Fiel
     control = <textarea className={cx(inputCls, 'h-28 py-2 font-mono text-xs')} value={value ?? ''} placeholder={f.placeholder} onChange={(e) => onChange(e.target.value)} />;
   else if (f.type === 'secret')
     control = (
-      <Input type="password" autoComplete="new-password" value={value === '__unchanged__' ? '' : value ?? ''} placeholder={value === '__unchanged__' ? '•••••••• (spremljeno, ostavi prazno)' : f.placeholder}
+      <Input type="password" autoComplete="new-password" value={value === '__unchanged__' ? '' : value ?? ''} placeholder={value === '__unchanged__' ? '•••••••• (saved, leave blank to keep)' : f.placeholder}
         onChange={(e) => onChange(e.target.value === '' && value === '__unchanged__' ? '__unchanged__' : e.target.value)} />
     );
   else

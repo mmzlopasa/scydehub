@@ -4,9 +4,24 @@ import { handleMessage, setState } from './store';
 let ws: WebSocket | null = null;
 let es: EventSource | null = null;
 let retry = 0;
-let stopped = false;
+let stopped = true;
 let timer: number | undefined;
 let wsFailures = 0;
+
+function teardown() {
+  clearTimeout(timer);
+  if (ws) {
+    // detach first: a late close event of an old socket must never schedule another reconnect
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch { /* ignore */ }
+    ws = null;
+  }
+  if (es) {
+    es.onopen = es.onmessage = es.onerror = null;
+    es.close();
+    es = null;
+  }
+}
 
 function scheduleReconnect() {
   if (stopped) return;
@@ -18,44 +33,53 @@ function scheduleReconnect() {
 }
 
 function connectSse() {
-  // EventSource can't send headers; cookie auth works, kiosk tokens fall back to polling via WS query param only
-  es = new EventSource('/api/events', { withCredentials: true });
-  es.onopen = () => { retry = 0; setState({ conn: 'online' }); };
-  es.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch { /* ignore */ } };
-  es.onerror = () => { es?.close(); es = null; scheduleReconnect(); };
+  const source = new EventSource('/api/events', { withCredentials: true });
+  es = source;
+  source.onopen = () => { retry = 0; setState({ conn: 'online' }); };
+  source.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch { /* ignore */ } };
+  source.onerror = () => { if (es !== source) return; teardown(); scheduleReconnect(); };
 }
 
 export function connect() {
   stopped = false;
-  ws?.close();
-  es?.close();
+  teardown();
   setState({ conn: 'connecting' });
-  if (wsFailures >= 3 && !kioskToken.get()) return connectSse();
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const tok = kioskToken.get();
-  const url = `${proto}://${location.host}/api/ws${tok ? `?kiosk=${encodeURIComponent(tok)}` : ''}`;
+  if (wsFailures >= 3 && !tok) return connectSse();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  // the kiosk token rides in the WebSocket sub-protocol, never in the URL (URLs end up in logs)
+  const socket = new WebSocket(`${proto}://${location.host}/api/ws`, tok ? ['scyde', `kiosk.${tok}`] : ['scyde']);
+  ws = socket;
   let opened = false;
-  ws = new WebSocket(url);
-  ws.onopen = () => { opened = true; retry = 0; wsFailures = 0; setState({ conn: 'online' }); };
-  ws.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch { /* ignore */ } };
-  ws.onclose = (e) => {
+  socket.onopen = () => { opened = true; retry = 0; wsFailures = 0; setState({ conn: 'online' }); };
+  socket.onmessage = (e) => { try { handleMessage(JSON.parse(e.data)); } catch { /* ignore */ } };
+  socket.onclose = (e) => {
+    if (ws !== socket) return;
+    ws = null;
     if (!opened) wsFailures++;
-    if (e.code === 4401) { setState({ conn: 'offline' }); return; }
+    if (e.code === 4401 || e.code === 4403) {
+      // session ended / token revoked → back to the sign-in (or token) screen
+      stopped = true;
+      setState({ conn: 'offline' });
+      if (kioskToken.get() && e.code === 4401) kioskToken.clear();
+      setTimeout(() => location.reload(), 800);
+      return;
+    }
     scheduleReconnect();
   };
 }
 
 export function disconnect() {
   stopped = true;
-  clearTimeout(timer);
-  ws?.close();
-  es?.close();
+  teardown();
 }
 
-// reconnect immediately when the device wakes up / network returns
+const alive = () => (ws && ws.readyState <= 1) || !!es;
+
+// reconnect immediately when the device wakes up / network returns — but only if we are not connected already
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { retry = 0; connect(); });
+  window.addEventListener('online', () => { if (!stopped && !alive()) { retry = 0; connect(); } });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && (!ws || ws.readyState > 1) && !es) { retry = 0; connect(); }
+    if (document.visibilityState === 'visible' && !stopped && !alive()) { retry = 0; connect(); }
   });
 }

@@ -26,10 +26,10 @@ export function rosDuration(s?: string): number | null {
 }
 
 function finish(d: MtData) {
-  const alerts = d.wan && !d.wan.running ? [{ key: 'wan', severity: 'critical' as const, message: `WAN ${d.wan.name} je pao` }] : [];
+  const alerts = d.wan && !d.wan.running ? [{ key: 'wan', severity: 'critical' as const, message: `WAN ${d.wan.name} is down` }] : [];
   return {
     status: alerts.length ? ('degraded' as const) : ('up' as const),
-    summary: `CPU ${d.cpu}% · ${d.wan ? `WAN ↓${(d.wan.rxBps / 1e6).toFixed(1)} Mbps` : `${d.interfaces.filter((i) => i.running).length} sučelja`}`,
+    summary: `CPU ${d.cpu}% · ${d.wan ? `WAN ↓${(d.wan.rxBps / 1e6).toFixed(1)} Mbps` : `${d.interfaces.filter((i) => i.running).length} interfaces`}`,
     data: d,
     metrics: { cpu: d.cpu, mem: pct(d.memUsed, d.memTotal), ...(d.wan ? { wan_rx: d.wan.rxBps, wan_tx: d.wan.txBps } : {}), leases: d.leaseCount },
     alerts,
@@ -82,15 +82,15 @@ async function collect(ctx: PluginContext<Cfg>) {
 
 export const mikrotik: Plugin<Cfg, MtData> = {
   id: 'mikrotik', name: 'MikroTik', icon: 'mikrotik', category: 'network',
-  description: 'RouterOS v7 REST: CPU, RAM, promet po sučeljima uživo, WAN, DHCP leaseovi, WireGuard peerovi.',
+  description: 'RouterOS v7 REST: CPU, RAM, live per-interface traffic, WAN, DHCP leases, WireGuard peers.',
   docsUrl: 'https://help.mikrotik.com/docs/spaces/ROS/pages/47579162/REST+API',
   defaultInterval: 10,
   fields: [
     urlField('https://192.168.88.1'),
-    { key: 'username', label: 'Korisnik (grupa read + rest-api)', type: 'string', required: true },
-    { key: 'password', label: 'Lozinka', type: 'secret', required: true },
-    { key: 'wanInterface', label: 'WAN sučelje', type: 'string', placeholder: 'ether1' },
-    { key: 'interfaces', label: 'Prikaži samo sučelja (zarezom)', type: 'string', placeholder: 'ether1,bridge,wg0' },
+    { key: 'username', label: 'Username (group read + rest-api)', type: 'string', required: true },
+    { key: 'password', label: 'Password', type: 'secret', required: true },
+    { key: 'wanInterface', label: 'WAN interface', type: 'string', placeholder: 'ether1' },
+    { key: 'interfaces', label: 'Show only interfaces (comma-separated)', type: 'string', placeholder: 'ether1,bridge,wg0' },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: 'Basic ' + Buffer.from(`${c.username}:${c.password}`).toString('base64') } }),
@@ -118,8 +118,8 @@ export const mikrotik: Plugin<Cfg, MtData> = {
     });
   },
   widgets: [
-    { id: 'traffic', name: 'MikroTik promet', description: 'WAN promet uživo s grafom, CPU, RAM', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
-    { id: 'interfaces', name: 'MikroTik sučelja', description: 'Sva sučelja s prometom', sizes: ['M', 'L'], defaultSize: 'M' },
-    { id: 'clients', name: 'MikroTik DHCP i VPN', description: 'DHCP leaseovi i WireGuard peerovi', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
+    { id: 'traffic', name: 'MikroTik traffic', description: 'Live WAN traffic with chart, CPU, RAM', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'interfaces', name: 'MikroTik interfaces', description: 'All interfaces with traffic', sizes: ['M', 'L'], defaultSize: 'M' },
+    { id: 'clients', name: 'MikroTik DHCP and VPN', description: 'DHCP leases and WireGuard peers', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
   ],
 };

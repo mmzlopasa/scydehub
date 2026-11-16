@@ -2,22 +2,31 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { config } from '../config.js';
 
 const key = scryptSync(config.secretKey, 'scydehub-secrets-v1', 32);
-const PREFIX = 'enc:v1:';
+const V1 = 'enc:v1:';
+const V2 = 'enc:v2:';
 
-export function encrypt(plain: string): string {
+/**
+ * AES-256-GCM. With `aad` the ciphertext is bound to where it is stored ("inst:<id>:<field>"), so a
+ * ciphertext copied into another instance or field (e.g. via a crafted backup) no longer decrypts.
+ */
+export function encrypt(plain: string, aad?: string): string {
   const iv = randomBytes(12);
   const c = createCipheriv('aes-256-gcm', key, iv);
+  if (aad) c.setAAD(Buffer.from(aad, 'utf8'));
   const ct = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
-  return PREFIX + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
+  return (aad ? V2 : V1) + Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64');
 }
-export function decrypt(value: string): string {
-  if (!value.startsWith(PREFIX)) return value;
-  const buf = Buffer.from(value.slice(PREFIX.length), 'base64');
+export function decrypt(value: string, aad?: string): string {
+  const v2 = value.startsWith(V2);
+  if (!v2 && !value.startsWith(V1)) return value;
+  const buf = Buffer.from(value.slice(V1.length), 'base64');
   const d = createDecipheriv('aes-256-gcm', key, buf.subarray(0, 12));
+  if (v2) d.setAAD(Buffer.from(aad ?? '', 'utf8'));
   d.setAuthTag(buf.subarray(12, 28));
   return Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString('utf8');
 }
-export const isEncrypted = (v: unknown) => typeof v === 'string' && v.startsWith(PREFIX);
+export const isLegacyCipher = (v: unknown) => typeof v === 'string' && v.startsWith(V1);
+export const isEncrypted = (v: unknown) => typeof v === 'string' && (v.startsWith(V1) || v.startsWith(V2));
 
 export function hashPassword(pw: string): string {
   const salt = randomBytes(16);
@@ -77,4 +86,22 @@ export function verifyTotp(secret: string, code: string, window = 1): boolean {
   }
   return false;
 }
+/** Like verifyTotp but returns the matching time-step counter (for replay protection), or null. */
+export function matchTotp(secret: string, code: string, window = 1): number | null {
+  const c = String(code ?? '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(c)) return null;
+  const now = Date.now();
+  let found: number | null = null;
+  for (let w = -window; w <= window; w++) {
+    const t = now + w * 30_000;
+    if (timingSafeEqual(Buffer.from(totpCode(secret, t)), Buffer.from(c))) found = Math.floor(t / 30_000);
+  }
+  return found;
+}
 export const newTotpSecret = () => base32Encode(randomBytes(20));
+/** one-time recovery codes: "XXXXX-XXXXX" */
+export function newRecoveryCode() {
+  const raw = base32Encode(randomBytes(7)).slice(0, 10);
+  return `${raw.slice(0, 5)}-${raw.slice(5)}`;
+}
+export const normalizeRecoveryCode = (c: string) => String(c ?? '').toUpperCase().replace(/[^A-Z2-7]/g, '');

@@ -12,21 +12,21 @@ function finish(d: PangolinData) {
   const off = remote.filter((s) => !s.online);
   return {
     status: off.length && off.length === remote.length ? ('down' as const) : off.length ? ('degraded' as const) : ('up' as const),
-    summary: `${remote.length - off.length}/${remote.length} siteova online · ${d.resources.length} resursa`,
+    summary: `${remote.length - off.length}/${remote.length} sites online · ${d.resources.length} resources`,
     data: d,
     metrics: { sites_online: remote.length - off.length, sites_offline: off.length, resources: d.resources.length },
-    alerts: off.map((s) => ({ key: `site:${s.id}`, severity: 'critical' as const, message: `Pangolin site ${s.name} je offline` })),
+    alerts: off.map((s) => ({ key: `site:${s.id}`, severity: 'critical' as const, message: `Pangolin site ${s.name} is offline` })),
   };
 }
 
 export const pangolin: Plugin<Cfg, PangolinData> = {
   id: 'pangolin', name: 'Pangolin', icon: 'pangolin', category: 'network',
-  description: 'Siteovi online/offline, resursi i stanje tunela (Integration API).',
+  description: 'Sites online/offline, resources and tunnel status (Integration API).',
   docsUrl: 'https://docs.pangolin.net/manage/integration-api',
   defaultInterval: 30,
   fields: [
-    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'U configu: flags.enable_integration_api: true (port server.integration_port, zadano 3003)' },
-    { key: 'apiKey', label: 'API ključ (id.secret)', type: 'secret', required: true },
+    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'In the config: flags.enable_integration_api: true (port server.integration_port, default 3003)' },
+    { key: 'apiKey', label: 'API key (id.secret)', type: 'secret', required: true },
     { key: 'orgId', label: 'Org ID', type: 'string', required: true },
     ...tlsFields,
   ],
@@ -58,5 +58,5 @@ export const pangolin: Plugin<Cfg, PangolinData> = {
       resources: ['streamero', 'mediarr', 'seerr', 'vault', 'hub', 'immich'].map((n, i) => ({ id: i + 1, name: n, domain: `${n}.scyde.net`, enabled: true, ssl: true, health: 'healthy', sitesOnline: 1, sitesTotal: 1 })),
     });
   },
-  widgets: [{ id: 'sites', name: 'Pangolin', description: 'Siteovi, tuneli i resursi', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
+  widgets: [{ id: 'sites', name: 'Pangolin', description: 'Sites, tunnels and resources', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
 };

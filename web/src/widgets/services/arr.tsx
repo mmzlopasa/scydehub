@@ -13,7 +13,7 @@ function stateTone(q: any): 'ok' | 'warn' | 'bad' | 'info' | 'muted' {
   if (q.status === 'downloading') return 'info';
   return 'muted';
 }
-const stateLabel = (q: any) => (q.state === 'importPending' ? 'Uvoz' : q.status === 'downloading' ? 'Preuzima' : q.status === 'queued' ? 'U redu' : q.status === 'completed' ? 'Gotovo' : q.status);
+const stateLabel = (q: any) => (q.state === 'importPending' ? 'Importing' : q.status === 'downloading' ? 'Downloading' : q.status === 'queued' ? 'Queued' : q.status === 'completed' ? 'Done' : q.status);
 
 /** Matches *arr queue items with qBittorrent torrents by downloadId (= torrent hash). */
 function useTorrentMap() {
@@ -26,11 +26,11 @@ function useTorrentMap() {
 export function ArrQueue({ data, size, instance, plugin }: WidgetProps) {
   const torrents = useTorrentMap();
   const q = data?.queue ?? [];
-  if (!q.length) return <Empty icon={plugin?.id === 'radarr' ? <Film /> : <Tv />} title="Red je prazan">Ništa se ne preuzima</Empty>;
+  if (!q.length) return <Empty icon={plugin?.id === 'radarr' ? <Film /> : <Tv />} title="Queue is empty">Nothing is downloading</Empty>;
   if (size === 'S')
     return (
       <div className="flex h-full flex-col justify-between">
-        <Stat label="U redu" value={<AnimatedNumber value={data.queueTotal} />} sub={`${q.filter((x: any) => x.status === 'downloading').length} preuzima`} />
+        <Stat label="Queued" value={<AnimatedNumber value={data.queueTotal} />} sub={`${q.filter((x: any) => x.status === 'downloading').length} downloading`} />
         <div className="space-y-1.5">{q.slice(0, 2).map((x: any) => <div key={x.id}><div className="truncate text-xs">{x.title}</div><Progress value={x.progress} height={4} /></div>)}</div>
       </div>
     );
@@ -48,7 +48,7 @@ export function ArrQueue({ data, size, instance, plugin }: WidgetProps) {
               </div>
               <Badge tone={stateTone(x)}>{stateLabel(x)}</Badge>
               {instance && size !== 'M' && (
-                <button className="opacity-0 transition group-hover/row:opacity-100 text-muted hover:text-bad" title="Makni iz reda"
+                <button className="opacity-0 transition group-hover/row:opacity-100 text-muted hover:text-bad" title="Remove from queue"
                   onClick={stop(() => runAction(instance.id, 'removeQueueItem', { id: x.id }, x.title))}><Trash2 className="size-3.5" /></button>
               )}
             </div>
@@ -75,10 +75,10 @@ export function ArrOverview({ data, size, instance, plugin }: WidgetProps) {
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="grid grid-cols-2 gap-3">
-        <Stat label={isRadarr ? 'Filmova' : 'Serija'} value={<AnimatedNumber value={data?.library} />} />
-        <Stat label="Nedostaje" value={<AnimatedNumber value={data?.missing} />} />
-        {size !== 'S' && <Stat label="U redu" value={<AnimatedNumber value={data?.queueTotal} />} />}
-        {size !== 'S' && <Stat label="Verzija" value={<span className="text-sm">{data?.version ?? '—'}</span>} />}
+        <Stat label={isRadarr ? 'Movies' : 'Series'} value={<AnimatedNumber value={data?.library} />} />
+        <Stat label="Missing" value={<AnimatedNumber value={data?.missing} />} />
+        {size !== 'S' && <Stat label="Queued" value={<AnimatedNumber value={data?.queueTotal} />} />}
+        {size !== 'S' && <Stat label="Version" value={<span className="text-sm">{data?.version ?? '—'}</span>} />}
       </div>
       {data?.health?.length > 0 && (
         <div className="space-y-1">
@@ -89,12 +89,12 @@ export function ArrOverview({ data, size, instance, plugin }: WidgetProps) {
       )}
       {disk && (
         <div className="mt-auto space-y-1">
-          <div className="flex justify-between text-xs text-muted"><span className="flex items-center gap-1"><HardDrive className="size-3" />{disk.label || disk.path}</span><span className="num">{bytes(disk.free)} slobodno</span></div>
+          <div className="flex justify-between text-xs text-muted"><span className="flex items-center gap-1"><HardDrive className="size-3" />{disk.label || disk.path}</span><span className="num">{bytes(disk.free)} free</span></div>
           <Progress value={ratio(disk.total - disk.free, disk.total)} tone="auto" height={4} />
         </div>
       )}
       {size !== 'S' && instance && (
-        <Button size="sm" icon={<Search className="size-3.5" />} onClick={stop(() => runAction(instance.id, 'searchMissing'))}>Pretraži nedostajuće</Button>
+        <Button size="sm" icon={<Search className="size-3.5" />} onClick={stop(() => runAction(instance.id, 'searchMissing'))}>Search missing</Button>
       )}
     </div>
   );
@@ -106,7 +106,7 @@ export function ArrCalendar({ data, size }: WidgetProps) {
 }
 
 export function CalendarList({ items, size }: { items: any[]; size: string }) {
-  if (!items.length) return <Empty icon={<CalendarDays />} title="Ništa u kalendaru" />;
+  if (!items.length) return <Empty icon={<CalendarDays />} title="Nothing in the calendar" />;
   const groups = new Map<string, any[]>();
   for (const c of items) {
     const k = dayLabel(c.date);
@@ -122,7 +122,7 @@ export function CalendarList({ items, size }: { items: any[]; size: string }) {
             <Row key={`${c.source ?? ''}${c.id}`}
               left={c.source === 'radarr' ? <Film className="size-4 text-muted" /> : c.source === 'sonarr' ? <Tv className="size-4 text-muted" /> : undefined}
               title={c.title} sub={c.subtitle}
-              right={<div className="flex items-center gap-2">{size !== 'M' && c.kind && <Badge>{c.kind}</Badge>}{c.hasFile ? <Badge tone="ok">Imam</Badge> : c.source !== 'radarr' && c.kind === undefined ? <span className="num text-xs text-muted">{time(c.date)}</span> : null}</div>} />
+              right={<div className="flex items-center gap-2">{size !== 'M' && c.kind && <Badge>{c.kind}</Badge>}{c.hasFile ? <Badge tone="ok">Downloaded</Badge> : c.source !== 'radarr' && c.kind === undefined ? <span className="num text-xs text-muted">{time(c.date)}</span> : null}</div>} />
           ))}
         </div>
       ))}

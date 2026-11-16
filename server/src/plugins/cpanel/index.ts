@@ -58,37 +58,37 @@ function finish(d: CpanelData, warnDays: number) {
   const alerts: PluginAlert[] = [];
   for (const a of d.accounts) {
     if (a.error) alerts.push({ key: `acct:${a.user}`, severity: 'warning', message: `${a.user}: ${a.error}` });
-    for (const s of a.ssl) if (s.daysLeft < warnDays) alerts.push({ key: `ssl:${s.host}`, severity: s.daysLeft < 3 ? 'critical' : 'warning', message: `SSL ${s.host} ističe za ${s.daysLeft} d` });
-    if (a.diskLimitMb && a.diskUsedMb / a.diskLimitMb > 0.9) alerts.push({ key: `disk:${a.user}`, severity: 'warning', message: `${a.user} koristi ${Math.round((a.diskUsedMb / a.diskLimitMb) * 100)}% kvote` });
+    for (const s of a.ssl) if (s.daysLeft < warnDays) alerts.push({ key: `ssl:${s.host}`, severity: s.daysLeft < 3 ? 'critical' : 'warning', message: `SSL ${s.host} expires in ${s.daysLeft} d` });
+    if (a.diskLimitMb && a.diskUsedMb / a.diskLimitMb > 0.9) alerts.push({ key: `disk:${a.user}`, severity: 'warning', message: `${a.user} is using ${Math.round((a.diskUsedMb / a.diskLimitMb) * 100)}% of quota` });
   }
   const failing = d.accounts.filter((a) => a.error).length;
   return {
     status: failing === d.accounts.length && failing > 0 ? ('down' as const) : failing ? ('degraded' as const) : ('up' as const),
-    summary: `${d.accounts.length} računa · ${d.accounts.reduce((n, a) => n + a.domains.length, 0)} domena`,
+    summary: `${d.accounts.length} accounts · ${d.accounts.reduce((n, a) => n + a.domains.length, 0)} domains`,
     data: d, alerts,
     metrics: Object.fromEntries(d.accounts.map((a) => [`disk_${a.user}`, a.diskUsedMb])),
   };
 }
 
 export const cpanel: Plugin<Cfg, CpanelData> = {
-  id: 'cpanel', name: 'cPanel računi', icon: 'cpanel', category: 'hosting',
-  description: 'Po računu: disk, bandwidth, domene, istek SSL-a, e-mail kvote. Direktno (cPanel token) ili kroz WHM token za više računa.',
+  id: 'cpanel', name: 'cPanel accounts', icon: 'cpanel', category: 'hosting',
+  description: 'Per account: disk, bandwidth, domains, SSL expiry, e-mail quotas. Directly (cPanel token) or via a WHM token for multiple accounts.',
   docsUrl: 'https://api.docs.cpanel.net/cpanel/introduction',
   defaultInterval: 600,
   fields: [
-    { key: 'mode', label: 'Način', type: 'select', default: 'cpanel', options: [{ value: 'cpanel', label: 'cPanel token (jedan račun, port 2083)' }, { value: 'whm', label: 'WHM token (više računa, port 2087)' }] },
+    { key: 'mode', label: 'Mode', type: 'select', default: 'cpanel', options: [{ value: 'cpanel', label: 'cPanel token (single account, port 2083)' }, { value: 'whm', label: 'WHM token (multiple accounts, port 2087)' }] },
     { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://server.example.com:2083' },
-    { key: 'username', label: 'Korisnik (cPanel korisnik ili root)', type: 'string', required: true },
+    { key: 'username', label: 'Username (cPanel user or root)', type: 'string', required: true },
     { key: 'token', label: 'API token', type: 'secret', required: true },
-    { key: 'accounts', label: 'Računi (samo WHM način, zarezom)', type: 'string', placeholder: 'scyde,klijent1' },
-    { key: 'sslWarnDays', label: 'Upozori kad SSL ističe za (dana)', type: 'number', default: 14 },
+    { key: 'accounts', label: 'Accounts (WHM mode only, comma-separated)', type: 'string', placeholder: 'scyde,klijent1' },
+    { key: 'sslWarnDays', label: 'Warn when SSL expires within (days)', type: 'number', default: 14 },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: `${c.mode === 'whm' ? 'whm' : 'cpanel'} ${c.username}:${c.token}` } }),
   async collect(ctx) {
     const c = ctx.config;
     const users = c.mode === 'whm' ? (c.accounts ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [c.username];
-    if (!users.length) throw new Error('Navedi barem jedan račun');
+    if (!users.length) throw new Error('Specify at least one account');
     const accounts = [];
     for (const u of users) accounts.push(await account(ctx, u));
     return finish({ accounts }, Number(c.sslWarnDays) || 14);
@@ -105,5 +105,5 @@ export const cpanel: Plugin<Cfg, CpanelData> = {
       ],
     }, Number(ctx.config.sslWarnDays) || 14);
   },
-  widgets: [{ id: 'accounts', name: 'cPanel računi', description: 'Disk, bandwidth, domene, SSL, mailovi', sizes: ['M', 'L', 'XL'], defaultSize: 'L' }],
+  widgets: [{ id: 'accounts', name: 'cPanel accounts', description: 'Disk, bandwidth, domains, SSL, mailboxes', sizes: ['M', 'L', 'XL'], defaultSize: 'L' }],
 };

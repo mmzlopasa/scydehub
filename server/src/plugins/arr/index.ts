@@ -35,7 +35,7 @@ function mapQueue(kind: Kind, r: any): ArrQueueItem {
 function mapCalendar(kind: Kind, r: any): ArrCalendarItem {
   if (kind === 'radarr') {
     const date = r.digitalRelease ?? r.physicalRelease ?? r.inCinemas ?? r.releaseDate;
-    const kindLabel = r.digitalRelease ? 'Digitalno' : r.physicalRelease ? 'Fizičko' : 'Kino';
+    const kindLabel = r.digitalRelease ? 'Digital' : r.physicalRelease ? 'Physical' : 'Cinema';
     return { id: r.id, title: r.title, subtitle: r.year ? String(r.year) : undefined, date, hasFile: !!r.hasFile, kind: kindLabel };
   }
   return {
@@ -52,7 +52,7 @@ function finish(d: ArrData) {
   const errorsInQueue = d.queue.filter((q) => q.trackedStatus === 'warning' || q.trackedStatus === 'error').length;
   return {
     status: alerts.some((a) => a.severity === 'critical') ? ('degraded' as const) : ('up' as const),
-    summary: `${d.queueTotal} u redu · ${d.missing} nedostaje`,
+    summary: `${d.queueTotal} queued · ${d.missing} missing`,
     data: d,
     metrics: { queue: d.queueTotal, missing: d.missing, library: d.library, queue_errors: errorsInQueue },
     alerts,
@@ -97,10 +97,10 @@ function makeArr(kind: Kind): Plugin<Cfg, ArrData> {
 
   return {
     id: kind, name: isRadarr ? 'Radarr' : 'Sonarr', icon: kind, category: 'media',
-    description: isRadarr ? 'Filmovi: queue s progresom, kalendar izlazaka, missing, health, disk.' : 'Serije: queue s progresom, kalendar epizoda, missing, health, disk.',
+    description: isRadarr ? 'Movies: queue with progress, release calendar, missing, health, disk.' : 'Series: queue with progress, episode calendar, missing, health, disk.',
     docsUrl: isRadarr ? 'https://radarr.video/docs/api/' : 'https://sonarr.tv/docs/api/',
     defaultInterval: 30,
-    fields: [urlField(isRadarr ? 'http://192.168.1.20:7878' : 'http://192.168.1.20:8989'), apiKeyField(), { key: 'calendarDays', label: 'Kalendar: dana unaprijed', type: 'number', default: 14 }, ...tlsFields],
+    fields: [urlField(isRadarr ? 'http://192.168.1.20:7878' : 'http://192.168.1.20:8989'), apiKeyField(), { key: 'calendarDays', label: 'Calendar: days ahead', type: 'number', default: 14 }, ...tlsFields],
     http: (c) => ({ headers: { 'X-Api-Key': c.apiKey } }),
     collect,
     mock(ctx) {
@@ -116,7 +116,7 @@ function makeArr(kind: Kind): Plugin<Cfg, ArrData> {
       });
       const day = 86400_000;
       const cal: ArrCalendarItem[] = (isRadarr
-        ? [['Mickey 17', '2025', 1, 'Digitalno'], ['Sinners', '2025', 3, 'Digitalno'], ['Thunderbolts*', '2025', 6, 'Fizičko'], ['Superman', '2025', 10, 'Kino']]
+        ? [['Mickey 17', '2025', 1, 'Digital'], ['Sinners', '2025', 3, 'Digital'], ['Thunderbolts*', '2025', 6, 'Physical'], ['Superman', '2025', 10, 'Cinema']]
         : [['Severance', 'S02E08 · Sweet Vitriol', 0], ['The Last of Us', 'S02E04 · Day One', 2], ['Andor', 'S02E06 · What a Festive Evening', 4], ['Slow Horses', 'S05E03 · Hard Lines', 7]]
       ).map((x: any, i) => ({ id: 100 + i, title: x[0], subtitle: x[1], date: new Date(Date.now() + x[2] * day).toISOString(), hasFile: x[2] === 0, kind: x[3] }));
       return finish({
@@ -128,23 +128,23 @@ function makeArr(kind: Kind): Plugin<Cfg, ArrData> {
     },
     actions: [
       isRadarr
-        ? { id: 'searchMissing', label: 'Pretraži sve nedostajuće', description: 'Pokreće MissingMoviesSearch', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'MissingMoviesSearch' }); return 'Pretraga pokrenuta'; } }
-        : { id: 'searchMissing', label: 'Pretraži sve nedostajuće', description: 'Pokreće MissingEpisodeSearch', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'MissingEpisodeSearch', monitored: true }); return 'Pretraga pokrenuta'; } },
-      { id: 'rssSync', label: 'RSS sync', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'RssSync' }); return 'RSS sync pokrenut'; } },
-      { id: 'refreshDownloads', label: 'Osvježi preuzimanja', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'RefreshMonitoredDownloads' }); return 'Osvježavanje pokrenuto'; } },
+        ? { id: 'searchMissing', label: 'Search all missing', description: 'Runs MissingMoviesSearch', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'MissingMoviesSearch' }); return 'Search started'; } }
+        : { id: 'searchMissing', label: 'Search all missing', description: 'Runs MissingEpisodeSearch', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'MissingEpisodeSearch', monitored: true }); return 'Search started'; } },
+      { id: 'rssSync', label: 'RSS sync', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'RssSync' }); return 'RSS sync started'; } },
+      { id: 'refreshDownloads', label: 'Refresh downloads', run: async (ctx) => { await ctx.http.post('/api/v3/command', { name: 'RefreshMonitoredDownloads' }); return 'Refresh started'; } },
       {
-        id: 'removeQueueItem', label: 'Makni iz reda', danger: true,
-        params: [{ key: 'id', label: 'Queue ID', type: 'number', required: true }, { key: 'blocklist', label: 'Dodaj na blocklist', type: 'boolean', default: false }],
+        id: 'removeQueueItem', label: 'Remove from queue', danger: true,
+        params: [{ key: 'id', label: 'Queue ID', type: 'number', required: true }, { key: 'blocklist', label: 'Add to blocklist', type: 'boolean', default: false }],
         run: async (ctx, p) => {
           await ctx.http.request(`/api/v3/queue/${Number(p.id)}`, { method: 'DELETE', query: { removeFromClient: true, blocklist: !!p.blocklist } });
-          return 'Maknuto iz reda';
+          return 'Removed from queue';
         },
       },
     ],
     widgets: [
-      { id: 'queue', name: `${isRadarr ? 'Radarr' : 'Sonarr'} queue`, description: 'Preuzimanja u tijeku s progresom i ETA', sizes: ['S', 'M', 'L', 'XL'], defaultSize: 'M' },
-      { id: 'overview', name: `${isRadarr ? 'Radarr' : 'Sonarr'} pregled`, description: 'Biblioteka, missing, health i disk', sizes: ['S', 'M', 'L'], defaultSize: 'S' },
-      { id: 'calendar', name: `${isRadarr ? 'Radarr' : 'Sonarr'} kalendar`, description: 'Nadolazeći izlasci', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
+      { id: 'queue', name: `${isRadarr ? 'Radarr' : 'Sonarr'} queue`, description: 'Downloads in progress with progress and ETA', sizes: ['S', 'M', 'L', 'XL'], defaultSize: 'M' },
+      { id: 'overview', name: `${isRadarr ? 'Radarr' : 'Sonarr'} overview`, description: 'Library, missing, health and disk', sizes: ['S', 'M', 'L'], defaultSize: 'S' },
+      { id: 'calendar', name: `${isRadarr ? 'Radarr' : 'Sonarr'} calendar`, description: 'Upcoming releases', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
     ],
   };
 }

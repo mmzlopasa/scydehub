@@ -12,7 +12,7 @@ export function Incidents() {
   useEffect(() => { get('/api/incidents').then(setRows); }, [live]);
   return (
     <>
-      <PageHead title="Incidenti" desc="Log svih incidenata s početkom, trajanjem i potvrdom." />
+      <PageHead title="Incidents" desc="Log of all incidents with start time, duration and acknowledgement." />
       <Card className="!p-2">
         <div className="divide-y divide-line">
           {rows.map((i) => (
@@ -25,11 +25,11 @@ export function Incidents() {
               <Badge tone={i.severity === 'critical' ? 'bad' : i.severity === 'warning' ? 'warn' : 'info'}>{i.severity}</Badge>
               <div className="num w-44 text-right text-xs text-muted">{dateTime(i.started_at)} · {duration(((i.resolved_at ?? Date.now()) - i.started_at) / 1000)}</div>
               <div className="w-36 text-right text-xs">
-                {i.acked_at ? <span className="text-muted">potvrdio {i.acked_by}</span> : !i.resolved_at ? <Button size="sm" onClick={() => post(`/api/incidents/${i.id}/ack`).then(() => toast('Potvrđeno'))}>Potvrdi</Button> : <span className="text-ok">riješeno</span>}
+                {i.acked_at ? <span className="text-muted">acknowledged by {i.acked_by}</span> : !i.resolved_at ? <Button size="sm" onClick={() => post(`/api/incidents/${i.id}/ack`).then(() => toast('Acknowledged'))}>Acknowledge</Button> : <span className="text-ok">resolved</span>}
               </div>
             </div>
           ))}
-          {!rows.length && <div className="py-10 text-center text-sm text-muted">Još nije bilo incidenata.</div>}
+          {!rows.length && <div className="py-10 text-center text-sm text-muted">No incidents yet.</div>}
         </div>
       </Card>
     </>

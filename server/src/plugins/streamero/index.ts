@@ -17,7 +17,7 @@ function finish(d: StreameroData) {
   const tc = d.streams.filter((s) => s.transcoding).length;
   return {
     status: 'up' as const,
-    summary: d.streams.length ? `${d.streams.length} aktivnih streamova${tc ? ` (${tc} transkod.)` : ''}` : 'Nitko ne gleda',
+    summary: d.streams.length ? `Active streams: ${d.streams.length}${tc ? ` (${tc} transcoding)` : ''}` : 'Nobody is watching',
     data: d,
     metrics: { streams: d.streams.length, transcodes: tc, bandwidth: d.streams.reduce((a, s) => a + (s.bandwidth ?? 0), 0) },
   };
@@ -25,12 +25,12 @@ function finish(d: StreameroData) {
 
 export const streamero: Plugin<Cfg, StreameroData> = {
   id: 'streamero', name: 'Streamero', icon: 'jellyfin', category: 'media',
-  description: 'Aktivni streamovi, tko gleda što, transkodiranja, veličina biblioteke, nedavno dodano.',
+  description: 'Active streams, who is watching what, transcodes, library size, recently added.',
   defaultInterval: 10,
   fields: [
     urlField('http://192.168.1.21:3000'),
-    { key: 'apiKey', label: 'API ključ', type: 'secret' },
-    { key: 'apiKeyHeader', label: 'Header za ključ', type: 'string', default: 'X-Api-Key' },
+    { key: 'apiKey', label: 'API key', type: 'secret' },
+    { key: 'apiKeyHeader', label: 'API key header', type: 'string', default: 'X-Api-Key' },
     { key: 'statsPath', label: 'Stats endpoint', type: 'string', default: '/api/stats' },
     ...tlsFields,
   ],
@@ -57,7 +57,7 @@ export const streamero: Plugin<Cfg, StreameroData> = {
     });
   },
   widgets: [
-    { id: 'streams', name: 'Streamero streamovi', description: 'Tko gleda što, uživo', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
-    { id: 'library', name: 'Streamero biblioteka', description: 'Veličina biblioteke i nedavno dodano', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
+    { id: 'streams', name: 'Streamero streams', description: 'Who is watching what, live', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'library', name: 'Streamero library', description: 'Library size and recently added', sizes: ['M', 'L', 'XL'], defaultSize: 'M' },
   ],
 };

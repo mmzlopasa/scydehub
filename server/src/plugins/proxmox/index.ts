@@ -104,19 +104,19 @@ async function collect(ctx: PluginContext<Cfg>) {
 
 function build(data: PveData, c: Cfg) {
   const alerts: PluginAlert[] = [];
-  for (const n of data.nodes) if (!n.online) alerts.push({ key: `node:${n.node}`, severity: 'critical', message: `Node ${n.node} je offline` });
+  for (const n of data.nodes) if (!n.online) alerts.push({ key: `node:${n.node}`, severity: 'critical', message: `Node ${n.node} is offline` });
   for (const s of data.storage) {
     const p = pct(s.used, s.total);
-    if (s.active && p >= 90) alerts.push({ key: `storage:${s.node}:${s.storage}`, severity: p >= 95 ? 'critical' : 'warning', message: `Storage ${s.storage} je ${p}% pun` });
+    if (s.active && p >= 90) alerts.push({ key: `storage:${s.node}:${s.storage}`, severity: p >= 95 ? 'critical' : 'warning', message: `Storage ${s.storage} is ${p}% full` });
   }
   if (data.lastBackupTask && data.lastBackupTask.status !== 'OK')
-    alerts.push({ key: 'backup:task', severity: 'critical', message: `Zadnji backup nije uspio: ${data.lastBackupTask.status}` });
+    alerts.push({ key: 'backup:task', severity: 'critical', message: `Last backup failed: ${data.lastBackupTask.status}` });
   const maxAge = Number(c.backupMaxAgeHours) || 0;
   if (maxAge > 0) {
     for (const g of data.guests) {
       if (g.template) continue;
       if (!g.lastBackup || Date.now() - g.lastBackup > maxAge * 3600_000)
-        alerts.push({ key: `backup:${g.vmid}`, severity: 'warning', message: `${g.name} nema backup zadnjih ${maxAge} h` });
+        alerts.push({ key: `backup:${g.vmid}`, severity: 'warning', message: `${g.name} has no backup in the last ${maxAge} h` });
     }
   }
   const online = data.nodes.filter((n) => n.online);
@@ -138,7 +138,7 @@ function build(data: PveData, c: Cfg) {
   const anyOffline = data.nodes.some((n) => !n.online);
   return {
     status: anyOffline ? ('degraded' as const) : ('up' as const),
-    summary: node ? `CPU ${metrics.cpu}% · RAM ${metrics.mem}% · ${running}/${data.guests.length} gostiju` : 'Nema online nodeova',
+    summary: node ? `CPU ${metrics.cpu}% · RAM ${metrics.mem}% · ${running}/${data.guests.length} guests` : 'No nodes online',
     data, metrics, alerts,
   };
 }
@@ -146,7 +146,7 @@ function build(data: PveData, c: Cfg) {
 function guestParams() {
   return [
     { key: 'node', label: 'Node', type: 'string' as const, required: true },
-    { key: 'type', label: 'Tip', type: 'select' as const, options: [{ value: 'qemu', label: 'VM' }, { value: 'lxc', label: 'LXC' }], required: true },
+    { key: 'type', label: 'Type', type: 'select' as const, options: [{ value: 'qemu', label: 'VM' }, { value: 'lxc', label: 'LXC' }], required: true },
     { key: 'vmid', label: 'VMID', type: 'number' as const, required: true },
   ];
 }
@@ -160,7 +160,7 @@ function actionClient(ctx: PluginContext<Cfg>) {
 const power = (action: string, label: string, danger = false) => ({
   id: action, label, danger, params: guestParams(),
   async run(ctx: PluginContext<Cfg>, p: Record<string, any>) {
-    if (!/^\d+$/.test(String(p.vmid)) || !['qemu', 'lxc'].includes(p.type) || !/^[\w.-]+$/.test(String(p.node))) throw new Error('Neispravni parametri');
+    if (!/^\d+$/.test(String(p.vmid)) || !['qemu', 'lxc'].includes(p.type) || !/^[\w.-]+$/.test(String(p.node))) throw new Error('Invalid parameters');
     const r = await actionClient(ctx).post<{ data: string }>(`/api2/json/nodes/${p.node}/${p.type}/${p.vmid}/status/${action}`, {});
     return `${label}: ${p.type} ${p.vmid} (task ${String(r?.data ?? '').split(':').slice(-3, -2)[0] ?? 'ok'})`;
   },
@@ -187,17 +187,17 @@ const mockState = {
 
 export const proxmox: Plugin<Cfg, PveData> = {
   id: 'proxmox', name: 'Proxmox VE', icon: 'proxmox', category: 'infrastructure',
-  description: 'Host, LXC i VM: resursi, storage, backupi, snapshoti, updatei i upravljanje gostima.',
+  description: 'Host, LXC and VM: resources, storage, backups, snapshots, updates and guest management.',
   docsUrl: 'https://pve.proxmox.com/pve-docs/api-viewer/',
   defaultInterval: 15,
   fields: [
     { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://192.168.1.10:8006' },
-    { key: 'tokenId', label: 'API token ID (read-only)', type: 'string', required: true, placeholder: 'hub@pve!monitor', help: 'Token s ulogom PVEAuditor na /. Za popis updatea treba Sys.Modify, a za popis backupa Datastore.AllocateSpace + VM.Backup (inače se ti podaci ne prikazuju).' },
+    { key: 'tokenId', label: 'API token ID (read-only)', type: 'string', required: true, placeholder: 'hub@pve!monitor', help: 'Token with the PVEAuditor role on /. Listing updates needs Sys.Modify, and listing backups needs Datastore.AllocateSpace + VM.Backup (otherwise that data is not shown).' },
     { key: 'tokenSecret', label: 'API token secret', type: 'secret', required: true },
-    { key: 'node', label: 'Samo node (opcionalno)', type: 'string', placeholder: 'pve' },
-    { key: 'actionTokenId', label: 'Token za akcije (opcionalno)', type: 'string', placeholder: 'hub@pve!actions', help: 'Zaseban token s VM.PowerMgmt. Bez njega akcije koriste read-only token i neće proći.' },
-    { key: 'actionTokenSecret', label: 'Secret tokena za akcije', type: 'secret' },
-    { key: 'backupMaxAgeHours', label: 'Upozori ako gost nema backup starije od (h)', type: 'number', default: 0, help: '0 = isključeno' },
+    { key: 'node', label: 'Only this node (optional)', type: 'string', placeholder: 'pve' },
+    { key: 'actionTokenId', label: 'Action token ID (optional)', type: 'string', placeholder: 'hub@pve!actions', help: 'Separate token with VM.PowerMgmt. Without it, actions use the read-only token and will fail.' },
+    { key: 'actionTokenSecret', label: 'Action token secret', type: 'secret' },
+    { key: 'backupMaxAgeHours', label: 'Warn if a guest has no backup newer than (h)', type: 'number', default: 0, help: '0 = disabled' },
     ...tlsFields,
   ],
   http: (c) => ({ baseUrl: c.url, headers: hdr(c.tokenId, c.tokenSecret) }),
@@ -228,10 +228,10 @@ export const proxmox: Plugin<Cfg, PveData> = {
     };
     return build(data, ctx.config);
   },
-  actions: [power('start', 'Pokreni'), power('shutdown', 'Ugasi (graceful)', true), power('reboot', 'Restartaj', true), power('stop', 'Prisilno zaustavi', true)],
+  actions: [power('start', 'Start'), power('shutdown', 'Shut down (graceful)', true), power('reboot', 'Reboot', true), power('stop', 'Force stop', true)],
   widgets: [
-    { id: 'summary', name: 'Proxmox host', description: 'CPU, RAM, load, temperatura, uptime, verzija i updatei', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
-    { id: 'guests', name: 'LXC i VM', description: 'Svi gosti sa statusom, resursima, backupom i akcijama', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
-    { id: 'storage', name: 'Proxmox storage', description: 'Zauzeće svih storagea', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'summary', name: 'Proxmox host', description: 'CPU, RAM, load, temperature, uptime, version and updates', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'guests', name: 'LXC and VM', description: 'All guests with status, resources, backup and actions', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
+    { id: 'storage', name: 'Proxmox storage', description: 'Usage of all storages', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
   ],
 };

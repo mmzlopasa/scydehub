@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { fetch } from 'undici';
 import { q, json } from '../db.js';
-import { decrypt, encrypt, isEncrypted } from '../lib/crypto.js';
+import { decrypt, encrypt, isEncrypted, isLegacyCipher } from '../lib/crypto.js';
 import type { ConfigField, Severity } from '../plugins/types.js';
 
 export interface Notification { title: string; message: string; severity: Severity; resolved?: boolean; url?: string }
@@ -29,7 +29,7 @@ export const channelTypes: ChannelType[] = [
     fields: [
       { key: 'url', label: 'Server', type: 'url', default: 'https://ntfy.sh', required: true },
       { key: 'topic', label: 'Topic', type: 'string', required: true },
-      { key: 'token', label: 'Access token (opcionalno)', type: 'secret' },
+      { key: 'token', label: 'Access token (optional)', type: 'secret' },
     ],
     async send(c, n) {
       const res = await fetch(String(c.url).replace(/\/+$/, '') + '/' + encodeURIComponent(c.topic), {
@@ -84,11 +84,11 @@ export const channelTypes: ChannelType[] = [
     fields: [
       { key: 'host', label: 'SMTP host', type: 'string', required: true },
       { key: 'port', label: 'Port', type: 'number', default: 587 },
-      { key: 'secure', label: 'TLS od početka (port 465)', type: 'boolean', default: false },
-      { key: 'user', label: 'Korisnik', type: 'string' },
-      { key: 'pass', label: 'Lozinka', type: 'secret' },
-      { key: 'from', label: 'Od', type: 'string', required: true },
-      { key: 'to', label: 'Za', type: 'string', required: true },
+      { key: 'secure', label: 'Implicit TLS (port 465)', type: 'boolean', default: false },
+      { key: 'user', label: 'Username', type: 'string' },
+      { key: 'pass', label: 'Password', type: 'secret' },
+      { key: 'from', label: 'From', type: 'string', required: true },
+      { key: 'to', label: 'To', type: 'string', required: true },
     ],
     async send(c, n) {
       const t = nodemailer.createTransport({ host: c.host, port: Number(c.port) || 587, secure: !!c.secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined });
@@ -106,16 +106,37 @@ export interface ChannelRow { id: string; type: string; name: string; config: st
 export function channelSecrets(type: string) {
   return new Set((getChannelType(type)?.fields ?? []).filter((f) => f.type === 'secret').map((f) => f.key));
 }
-export function encodeChannelConfig(type: string, incoming: Record<string, any>, prevRaw?: string) {
-  const secrets = channelSecrets(type);
+const caad = (id: string, field: string) => `chan:${id}:${field}`;
+/** fields that decide where a notification (and its credentials) is sent */
+const ROUTING = ['url', 'host', 'port'];
+
+export function encodeChannelConfig(type: string, id: string, incoming: Record<string, any>, prevRaw?: string) {
+  const t = getChannelType(type);
+  if (!t) throw new Error('Unknown channel type');
+  if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) throw new Error('config must be an object');
   const prev = json<Record<string, any>>(prevRaw, {});
   const out: Record<string, any> = {};
-  for (const f of getChannelType(type)?.fields ?? []) {
-    const v = incoming[f.key];
-    if (secrets.has(f.key)) {
-      if (v === '__unchanged__') { if (prev[f.key]) out[f.key] = prev[f.key]; }
-      else if (v) out[f.key] = encrypt(String(v));
-    } else if (v !== undefined) out[f.key] = v;
+  const rerouted = !!prevRaw && ROUTING.some((k) => k in incoming && String(incoming[k] ?? '') !== String(prev[k] ?? ''));
+  for (const f of t.fields) {
+    let v = incoming[f.key];
+    if (v === undefined || v === '' || v === null) v = f.type === 'secret' ? v : f.default; // defaults (e.g. https://ntfy.sh) apply on the server
+    if (v === undefined || v === null || v === '') continue;
+    if (f.type === 'secret') {
+      if (v === '__unchanged__') {
+        if (!prev[f.key]) continue;
+        if (rerouted) throw new Error(`The server address changed — re-enter "${f.label}"`);
+        out[f.key] = prev[f.key];
+      } else {
+        if (typeof v !== 'string' || v.length > 8192) throw new Error(`${f.label}: invalid value`);
+        out[f.key] = encrypt(v, caad(id, f.key));
+      }
+    } else if (f.type === 'boolean') out[f.key] = v === true || v === 'true';
+    else if (f.type === 'number') out[f.key] = Number(v) || 0;
+    else {
+      const sv = String(v).slice(0, 2048);
+      if (f.type === 'url' && !/^https?:\/\/[^\s]+$/i.test(sv)) throw new Error(`${f.label}: must start with http:// or https://`);
+      out[f.key] = sv;
+    }
   }
   return JSON.stringify(out);
 }
@@ -124,10 +145,29 @@ export function publicChannel(r: ChannelRow) {
   for (const k of channelSecrets(r.type)) if (c[k]) c[k] = '__unchanged__';
   return { ...r, config: c, enabled: !!r.enabled };
 }
-function decryptConfig(raw: string) {
-  const c = json<Record<string, any>>(raw, {});
-  for (const k of Object.keys(c)) if (isEncrypted(c[k])) c[k] = decrypt(c[k]);
+function decryptConfig(r: ChannelRow) {
+  const c = json<Record<string, any>>(r.config, {});
+  const secrets = channelSecrets(r.type);
+  for (const k of Object.keys(c)) {
+    if (!isEncrypted(c[k])) continue;
+    if (!secrets.has(k)) { delete c[k]; continue; }
+    try { c[k] = decrypt(c[k], caad(r.id, k)); } catch { c[k] = ''; }
+  }
   return c;
+}
+
+/** One-time upgrade: bind legacy (v1) ciphertexts to their channel + field. */
+export function upgradeChannelSecrets() {
+  for (const r of q.all<ChannelRow>('SELECT * FROM channels')) {
+    const c = json<Record<string, any>>(r.config, {});
+    const secrets = channelSecrets(r.type);
+    let changed = false;
+    for (const k of Object.keys(c)) {
+      if (!isLegacyCipher(c[k]) || !secrets.has(k)) continue;
+      try { c[k] = encrypt(decrypt(c[k]), caad(r.id, k)); changed = true; } catch { /* other key */ }
+    }
+    if (changed) q.run('UPDATE channels SET config = ? WHERE id = ?', JSON.stringify(c), r.id);
+  }
 }
 
 export async function sendTo(channelIds: string[] | 'all', n: Notification) {
@@ -138,7 +178,7 @@ export async function sendTo(channelIds: string[] | 'all', n: Notification) {
       const t = getChannelType(r.type);
       if (!t) return;
       try {
-        await t.send(decryptConfig(r.config), n);
+        await t.send(decryptConfig(r), n);
       } catch (e: any) {
         console.error(`[alerts] channel ${r.name} failed:`, e?.message ?? e);
       }
@@ -148,6 +188,6 @@ export async function sendTo(channelIds: string[] | 'all', n: Notification) {
 
 export async function testChannel(r: ChannelRow) {
   const t = getChannelType(r.type);
-  if (!t) throw new Error('Nepoznat kanal');
-  await t.send(decryptConfig(r.config), { title: 'Test obavijest', message: 'SCYDE Hub kanal radi.', severity: 'info' });
+  if (!t) throw new Error('Unknown channel');
+  await t.send(decryptConfig(r), { title: 'Test notification', message: 'SCYDE Hub channel is working.', severity: 'info' });
 }

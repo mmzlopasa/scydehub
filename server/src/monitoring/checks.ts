@@ -18,6 +18,7 @@ export interface CheckState {
 
 const states = new Map<string, CheckState>();
 const timers = new Map<string, NodeJS.Timeout>();
+const generation = new Map<string, number>();
 const listeners: ((s: CheckState, prev?: CheckState) => void)[] = [];
 export const onCheckState = (fn: (s: CheckState, prev?: CheckState) => void) => listeners.push(fn);
 export const getCheckStates = () => [...states.values()];
@@ -75,6 +76,9 @@ export async function runCheck(row: CheckRow) {
   } else {
     r = await runProbe(row.type, row.target, opts).catch((e): import('./probes.js').ProbeResult => ({ ok: false, message: String(e?.message ?? e) }));
   }
+  if (!r) r = { ok: false, message: `Unknown check type "${row.type}"` };
+  // deleted while the probe was running → nothing to record
+  if (!q.get('SELECT 1 FROM checks WHERE id = ?', row.id)) return undefined;
   const now = Date.now();
   q.run('INSERT INTO check_results (check_id, ts, ok, latency_ms, message) VALUES (?,?,?,?,?)', row.id, now, r.ok ? 1 : 0, r.latencyMs ?? null, r.message ?? null);
   if (r.latencyMs !== undefined) recordMetrics(`check:${row.id}`, { latency: r.latencyMs }, now);
@@ -94,15 +98,23 @@ export async function runCheck(row: CheckRow) {
 function schedule(row: CheckRow) {
   const t = timers.get(row.id);
   if (t) clearTimeout(t);
+  const gen = (generation.get(row.id) ?? 0) + 1;
+  generation.set(row.id, gen);
   if (!row.enabled) {
     states.set(row.id, { id: row.id, name: row.name, type: row.type, target: row.target, ok: null, statusSince: Date.now(), enabled: false });
     return;
   }
   const loop = async () => {
+    if (generation.get(row.id) !== gen) return;
     const fresh = q.get<CheckRow>('SELECT * FROM checks WHERE id = ?', row.id);
     if (!fresh || !fresh.enabled) return;
-    await runCheck(fresh);
-    timers.set(row.id, setTimeout(loop, Math.max(10, fresh.interval_sec) * 1000));
+    try {
+      await runCheck(fresh);
+    } catch (e) {
+      console.error(`[checks] ${row.id}:`, (e as Error).message);
+    }
+    if (generation.get(row.id) !== gen) return; // edited or removed while the probe ran
+    timers.set(row.id, setTimeout(loop, Math.min(86_400, Math.max(10, fresh.interval_sec)) * 1000));
   };
   timers.set(row.id, setTimeout(loop, Math.random() * 3000));
 }
@@ -113,10 +125,19 @@ export function rescheduleCheck(id: string) {
     const t = timers.get(id);
     if (t) clearTimeout(t);
     timers.delete(id);
+    generation.set(id, (generation.get(id) ?? 0) + 1);
     states.delete(id);
     return;
   }
   schedule(row);
+}
+
+/** After a restore: drop all in-memory check state and start again from the database. */
+export function resetChecks() {
+  for (const [id, t] of timers) { clearTimeout(t); generation.set(id, (generation.get(id) ?? 0) + 1); }
+  timers.clear();
+  states.clear();
+  startChecks();
 }
 
 export function startChecks() {

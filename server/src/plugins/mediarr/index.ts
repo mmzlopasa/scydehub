@@ -12,21 +12,21 @@ function finish(d: MediarrData) {
   const failed = d.jobs.reduce((a, j) => a + j.failed, 0);
   return {
     status: 'up' as const,
-    summary: `${d.photos.toLocaleString('hr')} fotografija · ${d.videos.toLocaleString('hr')} videa`,
+    summary: `${d.photos.toLocaleString('en-US')} photos · ${d.videos.toLocaleString('en-US')} videos`,
     data: d,
     metrics: { photos: d.photos, videos: d.videos, usage: d.usageBytes, jobs_pending: d.jobs.reduce((a, j) => a + j.active + j.waiting, 0), jobs_failed: failed },
-    alerts: failed ? [{ key: 'jobs', severity: 'warning' as const, message: `${failed} neuspjelih jobova` }] : [],
+    alerts: failed ? [{ key: 'jobs', severity: 'warning' as const, message: `Failed jobs: ${failed}` }] : [],
   };
 }
 
 export const mediarr: Plugin<Cfg, MediarrData> = {
   id: 'mediarr', name: 'Mediarr', icon: 'photoprism', category: 'media',
-  description: 'Fotografije i videi, zauzeće, job queue, zadnji upload (vlastiti /api/stats endpoint).',
+  description: 'Photos and videos, storage usage, job queue, last upload (custom /api/stats endpoint).',
   defaultInterval: 60,
   fields: [
     urlField('http://192.168.1.22:3000'),
-    { key: 'apiKey', label: 'API ključ', type: 'secret' },
-    { key: 'apiKeyHeader', label: 'Header za ključ', type: 'string', default: 'X-Api-Key' },
+    { key: 'apiKey', label: 'API key', type: 'secret' },
+    { key: 'apiKeyHeader', label: 'API key header', type: 'string', default: 'X-Api-Key' },
     { key: 'statsPath', label: 'Stats endpoint', type: 'string', default: '/api/stats' },
     ...tlsFields,
   ],
@@ -45,5 +45,5 @@ export const mediarr: Plugin<Cfg, MediarrData> = {
       lastUploadAt: new Date(Date.now() - 42 * 60_000).toISOString(),
     });
   },
-  widgets: [{ id: 'library', name: 'Mediarr', description: 'Biblioteka, zauzeće, jobovi, zadnji upload', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
+  widgets: [{ id: 'library', name: 'Mediarr', description: 'Library, storage usage, jobs, last upload', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
 };

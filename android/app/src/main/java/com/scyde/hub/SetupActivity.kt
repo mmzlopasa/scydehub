@@ -36,17 +36,18 @@ class SetupActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
-        val url = field("http://192.168.1.50:8484 ili https://hub.example.com", prefs.url, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        val url = field("http://192.168.1.50:8484 or https://hub.example.com", prefs.url, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val token = field("sk_…", prefs.token, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
-        val profiles = arrayOf("tv" to "TV (veći font, za daljinski)", "tablet" to "Tablet", "desktop" to "Monitor")
+        val profiles = arrayOf("tv" to "TV (larger text, for a remote)", "tablet" to "Tablet", "desktop" to "Monitor")
         val profileGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
         profiles.forEachIndexed { i, (id, l) ->
             profileGroup.addView(RadioButton(this).apply { text = l; this.id = 1000 + i; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.profile == id })
         }
-        val autostart = CheckBox(this).apply { text = "Pokreni automatski nakon paljenja uređaja"; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.autostart }
-        val selfSigned = CheckBox(this).apply { text = "Prihvati self-signed certifikat (samo za ovaj Hub)"; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.acceptSelfSigned }
+        val autostart = CheckBox(this).apply { text = "Start automatically when the device boots"; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.autostart }
+        val selfSigned = CheckBox(this).apply { text = "Accept a self-signed certificate (this Hub only, pinned on first use)"; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.acceptSelfSigned }
+        val overLock = CheckBox(this).apply { text = "Show over the lock screen (TV / wall tablet only)"; setTextColor(Color.WHITE); textSize = 16f; isChecked = prefs.showWhenLocked }
         val save = Button(this).apply {
-            text = "Spremi i pokreni"
+            text = "Save and start"
             textSize = 18f
             setTextColor(Color.WHITE)
             isAllCaps = false
@@ -54,13 +55,16 @@ class SetupActivity : Activity() {
             setPadding(dp(24), dp(16), dp(24), dp(16))
             setOnClickListener {
                 val u = url.text.toString().trim().trimEnd('/')
-                if (!u.startsWith("http://") && !u.startsWith("https://")) { url.error = "URL mora počinjati s http:// ili https://"; return@setOnClickListener }
-                if (token.text.isBlank()) { token.error = "Upiši kiosk token"; return@setOnClickListener }
+                if (!u.startsWith("http://") && !u.startsWith("https://")) { url.error = "URL must start with http:// or https://"; return@setOnClickListener }
+                if (token.text.isBlank()) { token.error = "Enter the kiosk token"; return@setOnClickListener }
+                // a new address or a re-save means a new certificate may be pinned
+                prefs.pinnedCert = ""
                 prefs.url = u
                 prefs.token = token.text.toString()
                 prefs.profile = profiles[(profileGroup.checkedRadioButtonId - 1000).coerceIn(0, profiles.size - 1)].first
                 prefs.autostart = autostart.isChecked
                 prefs.acceptSelfSigned = selfSigned.isChecked
+                prefs.showWhenLocked = overLock.isChecked
                 startActivity(Intent(this@SetupActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK))
                 finish()
             }
@@ -69,14 +73,14 @@ class SetupActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(48), dp(36), dp(48), dp(36))
             addView(label("SCYDE Hub", 30f, "#FFFFFF"))
-            addView(label("Upiši adresu Huba i kiosk token (Postavke → Kiosk i uređaji)."))
-            addView(label("URL Huba")); addView(url)
+            addView(label("Enter the Hub address and a kiosk token (Settings → Kiosk & devices)."))
+            addView(label("Hub URL")); addView(url)
             addView(label("Kiosk token")); addView(token)
             addView(label("Layout")); addView(profileGroup)
-            addView(autostart); addView(selfSigned)
+            addView(autostart); addView(selfSigned); addView(overLock)
             addView(Space(this@SetupActivity), LinearLayout.LayoutParams(1, dp(20)))
             addView(save, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            addView(label("Na TV-u: strelice ←/→ mijenjaju stranice, OK pauzira rotaciju. Drži BACK ili pritisni MENU za ovaj ekran.", 13f))
+            addView(label("On a TV: the ←/→ arrows switch boards, OK pauses rotation. Hold BACK or press MENU to open this screen.", 13f))
         }
         val scroll = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#0A0A10"))

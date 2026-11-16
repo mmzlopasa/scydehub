@@ -21,14 +21,14 @@ export interface GenericValue { label: string; value: number | string | null; un
 
 export const httpJson: Plugin<HttpCfg, { values: GenericValue[] }> = {
   id: 'http-json', name: 'HTTP / JSON', icon: 'json', category: 'generic',
-  description: 'Bilo koji JSON API: odaberi polja (dot path) i prikaži ih kao statistiku. Brojevi idu u povijest.',
+  description: 'Any JSON API: pick fields (dot path) and show them as stats. Numbers are stored in history.',
   defaultInterval: 60,
   fields: [
     { key: 'url', label: 'URL', type: 'url', required: true },
-    { key: 'method', label: 'Metoda', type: 'select', default: 'GET', options: [{ value: 'GET', label: 'GET' }, { value: 'POST', label: 'POST' }] },
-    { key: 'headers', label: 'Headeri (JSON, šifrirano)', type: 'secret', placeholder: '{"Authorization":"Bearer …"}' },
-    { key: 'body', label: 'Body (za POST)', type: 'text' },
-    { key: 'fields', label: 'Polja', type: 'text', required: true, placeholder: 'Korisnici = data.users | \nCPU = stats.cpu | %', help: 'Jedno po retku: Naziv = putanja.do.vrijednosti | jedinica' },
+    { key: 'method', label: 'Method', type: 'select', default: 'GET', options: [{ value: 'GET', label: 'GET' }, { value: 'POST', label: 'POST' }] },
+    { key: 'headers', label: 'Headers (JSON, encrypted)', type: 'secret', placeholder: '{"Authorization":"Bearer …"}' },
+    { key: 'body', label: 'Body (for POST)', type: 'text' },
+    { key: 'fields', label: 'Fields', type: 'text', required: true, placeholder: 'Users = data.users | \nCPU = stats.cpu | %', help: 'One per line: Label = path.to.value | unit' },
     ...tlsFields,
   ],
   http: (c) => {
@@ -46,10 +46,10 @@ export const httpJson: Plugin<HttpCfg, { values: GenericValue[] }> = {
     return { status: 'up', summary: values.slice(0, 2).map((v) => `${v.label}: ${v.value}${v.unit}`).join(' · '), data: { values }, metrics };
   },
   mock(ctx) {
-    const values = parseFieldLines(ctx.config.fields || 'Vrijednost = value').map((f, i) => ({ label: f.label, unit: f.unit, value: Math.round(wave(ctx.tick + i * 5, 50, 20)) }));
+    const values = parseFieldLines(ctx.config.fields || 'Value = value').map((f, i) => ({ label: f.label, unit: f.unit, value: Math.round(wave(ctx.tick + i * 5, 50, 20)) }));
     return { status: 'up', data: { values }, metrics: Object.fromEntries(values.map((v) => [slug(v.label), v.value])) };
   },
-  widgets: [{ id: 'values', name: 'HTTP/JSON vrijednosti', description: 'Proizvoljne vrijednosti iz JSON API-ja', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
+  widgets: [{ id: 'values', name: 'HTTP/JSON values', description: 'Arbitrary values from a JSON API', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
 };
 const slug = (s: string) => s.toLowerCase().normalize('NFD').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
 
@@ -57,12 +57,12 @@ const slug = (s: string) => s.toLowerCase().normalize('NFD').replace(/[^\w]+/g, 
 interface PromCfg { url: string; bearer?: string; queries: string }
 export const prometheus: Plugin<PromCfg, { values: GenericValue[] }> = {
   id: 'prometheus', name: 'Prometheus', icon: 'prometheus', category: 'generic',
-  description: 'PromQL upiti kao statistika (npr. temperatura s node_exportera: node_hwmon_temp_celsius).',
+  description: 'PromQL queries as stats (e.g. temperature from node_exporter: node_hwmon_temp_celsius).',
   defaultInterval: 30,
   fields: [
     { key: 'url', label: 'Prometheus URL', type: 'url', required: true, placeholder: 'http://prometheus:9090' },
-    { key: 'bearer', label: 'Bearer token (opcionalno)', type: 'secret' },
-    { key: 'queries', label: 'Upiti', type: 'text', required: true, placeholder: 'Temp CPU = max(node_hwmon_temp_celsius) | °C', help: 'Jedan po retku: Naziv = PromQL | jedinica' },
+    { key: 'bearer', label: 'Bearer token (optional)', type: 'secret' },
+    { key: 'queries', label: 'Queries', type: 'text', required: true, placeholder: 'Temp CPU = max(node_hwmon_temp_celsius) | °C', help: 'One per line: Label = PromQL | unit' },
     ...tlsFields,
   ],
   http: (c) => ({ headers: c.bearer ? { Authorization: `Bearer ${c.bearer}` } : ({} as Record<string, string>) }),
@@ -80,7 +80,7 @@ export const prometheus: Plugin<PromCfg, { values: GenericValue[] }> = {
     const values = parseFieldLines(ctx.config.queries || 'Temp CPU = x | °C').map((f, i) => ({ label: f.label, unit: f.unit, value: Math.round(wave(ctx.tick + i * 3, 48, 8) * 10) / 10 }));
     return { status: 'up', data: { values }, metrics: Object.fromEntries(values.map((v) => [slug(v.label), v.value])) };
   },
-  widgets: [{ id: 'values', name: 'Prometheus vrijednosti', description: 'Rezultati PromQL upita', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
+  widgets: [{ id: 'values', name: 'Prometheus values', description: 'PromQL query results', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
 };
 
 // ---------------- Docker ----------------
@@ -106,17 +106,17 @@ function dockerFinish(d: DockerData) {
   const bad = d.containers.filter((c) => c.state !== 'running' || c.health === 'unhealthy');
   return {
     status: bad.some((c) => c.health === 'unhealthy' || c.state === 'restarting' || c.state === 'dead') ? ('degraded' as const) : ('up' as const),
-    summary: `${d.containers.filter((c) => c.state === 'running').length}/${d.containers.length} kontejnera radi`,
+    summary: `${d.containers.filter((c) => c.state === 'running').length}/${d.containers.length} containers running`,
     data: d,
     metrics: { running: d.containers.filter((c) => c.state === 'running').length, total: d.containers.length },
-    alerts: d.containers.filter((c) => c.health === 'unhealthy').map((c) => ({ key: `unhealthy:${c.name}`, severity: 'warning' as const, message: `Kontejner ${c.name} je unhealthy` })),
+    alerts: d.containers.filter((c) => c.health === 'unhealthy').map((c) => ({ key: `unhealthy:${c.name}`, severity: 'warning' as const, message: `Container ${c.name} is unhealthy` })),
   };
 }
 export const docker: Plugin<DockerCfg, DockerData> = {
   id: 'docker', name: 'Docker', icon: 'docker', category: 'generic',
-  description: 'Kontejneri preko Docker API-ja (preporuka: docker-socket-proxy samo za čitanje + POST za restart).',
+  description: 'Containers via the Docker API (recommended: read-only docker-socket-proxy + POST for restart).',
   defaultInterval: 30,
-  fields: [{ key: 'url', label: 'Docker endpoint', type: 'string', required: true, default: 'http://docker-socket-proxy:2375', placeholder: 'unix:///var/run/docker.sock ili http://host:2375' }],
+  fields: [{ key: 'url', label: 'Docker endpoint', type: 'string', required: true, default: 'http://docker-socket-proxy:2375', placeholder: 'unix:///var/run/docker.sock or http://host:2375' }],
   async collect({ config: c }) {
     const list = await dockerGet(c.url, '/containers/json?all=1');
     return dockerFinish({
@@ -135,9 +135,9 @@ export const docker: Plugin<DockerCfg, DockerData> = {
   },
   actions: [
     {
-      id: 'restart', label: 'Restartaj kontejner', danger: true, params: [{ key: 'id', label: 'Container ID', type: 'string', required: true }],
-      run: async ({ config: c }, p) => { if (!/^[\w.-]+$/.test(String(p.id))) throw new Error('Neispravan ID'); await dockerGet(c.url, `/containers/${p.id}/restart`, 'POST'); return 'Kontejner restartan'; },
+      id: 'restart', label: 'Restart container', danger: true, params: [{ key: 'id', label: 'Container ID', type: 'string', required: true }],
+      run: async ({ config: c }, p) => { if (!/^[\w.-]+$/.test(String(p.id))) throw new Error('Invalid ID'); await dockerGet(c.url, `/containers/${p.id}/restart`, 'POST'); return 'Container restarted'; },
     },
   ],
-  widgets: [{ id: 'containers', name: 'Docker kontejneri', description: 'Status svih kontejnera', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
+  widgets: [{ id: 'containers', name: 'Docker containers', description: 'Status of all containers', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
 };

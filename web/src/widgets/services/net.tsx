@@ -16,11 +16,11 @@ export function QbtTransfer({ data, state, size, instance }: WidgetProps) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted"><ArrowDown className="size-3 text-accent" />Download</div>
-          <div className="num text-xl font-semibold"><AnimatedNumber value={data?.dlSpeed} format={(n) => speed(n)} /></div>
+          <div className="dot text-xl font-semibold"><AnimatedNumber value={data?.dlSpeed} format={(n) => speed(n)} /></div>
         </div>
         <div>
           <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted"><ArrowUp className="size-3 text-ok" />Upload</div>
-          <div className="num text-xl font-semibold"><AnimatedNumber value={data?.upSpeed} format={(n) => speed(n)} /></div>
+          <div className="dot text-xl font-semibold"><AnimatedNumber value={data?.upSpeed} format={(n) => speed(n)} /></div>
         </div>
       </div>
       <div className="relative min-h-0 flex-1">
@@ -29,10 +29,10 @@ export function QbtTransfer({ data, state, size, instance }: WidgetProps) {
       </div>
       <div className="flex items-center gap-2 text-xs text-muted">
         <span className="num">{data?.downloading ?? 0} ↓ · {data?.seeding ?? 0} ↑</span>
-        {data?.freeSpace != null && size !== 'S' && <span className="num">· {bytes(data.freeSpace)} slobodno</span>}
+        {data?.freeSpace != null && size !== 'S' && <span className="num">· {bytes(data.freeSpace)} free</span>}
         {instance && (
           <button className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 hover:bg-panel-2 hover:text-fg" onClick={stop(() => runAction(instance.id, paused ? 'resumeAll' : 'pauseAll'))}>
-            {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{size !== 'S' && (paused ? 'Nastavi' : 'Pauziraj')}
+            {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}{size !== 'S' && (paused ? 'Resume' : 'Pause')}
           </button>
         )}
       </div>
@@ -41,13 +41,13 @@ export function QbtTransfer({ data, state, size, instance }: WidgetProps) {
 }
 
 const QSTATE: Record<string, [string, 'ok' | 'info' | 'warn' | 'bad' | 'muted']> = {
-  downloading: ['Preuzima', 'info'], forcedDL: ['Preuzima', 'info'], metaDL: ['Metadata', 'info'], stalledDL: ['Zastoj', 'warn'], queuedDL: ['U redu', 'muted'],
-  uploading: ['Seeda', 'ok'], stalledUP: ['Seeda', 'ok'], forcedUP: ['Seeda', 'ok'], stoppedDL: ['Pauzirano', 'muted'], pausedDL: ['Pauzirano', 'muted'],
-  stoppedUP: ['Gotovo', 'ok'], pausedUP: ['Gotovo', 'ok'], error: ['Greška', 'bad'], missingFiles: ['Nema datoteka', 'bad'], checkingDL: ['Provjera', 'muted'],
+  downloading: ['Downloading', 'info'], forcedDL: ['Downloading', 'info'], metaDL: ['Metadata', 'info'], stalledDL: ['Stalled', 'warn'], queuedDL: ['Queued', 'muted'],
+  uploading: ['Seeding', 'ok'], stalledUP: ['Seeding', 'ok'], forcedUP: ['Seeding', 'ok'], stoppedDL: ['Paused', 'muted'], pausedDL: ['Paused', 'muted'],
+  stoppedUP: ['Done', 'ok'], pausedUP: ['Done', 'ok'], error: ['Error', 'bad'], missingFiles: ['Missing files', 'bad'], checkingDL: ['Checking', 'muted'],
 };
 export function QbtTorrents({ data, size, instance }: WidgetProps) {
   const list = data?.active ?? [];
-  if (!list.length) return <Empty title="Nema aktivnih torrenta" />;
+  if (!list.length) return <Empty title="No active torrents" />;
   return (
     <List>
       {list.map((t: any) => {
@@ -59,7 +59,7 @@ export function QbtTorrents({ data, size, instance }: WidgetProps) {
               <div className="min-w-0 flex-1 truncate text-sm font-medium">{t.name}</div>
               <Badge tone={tone}>{label}</Badge>
               {instance && size !== 'M' && (
-                <button className="text-muted opacity-0 transition hover:text-fg group-hover/row:opacity-100" title={paused ? 'Nastavi' : 'Pauziraj'}
+                <button className="text-muted opacity-0 transition hover:text-fg group-hover/row:opacity-100" title={paused ? 'Resume' : 'Pause'}
                   onClick={stop(() => runAction(instance.id, paused ? 'resume' : 'pause', { hash: t.hash }, t.name))}>{paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}</button>
               )}
             </div>
@@ -86,16 +86,16 @@ export function AdguardStats({ data, size, instance }: WidgetProps) {
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center gap-4">
-        <Ring value={data?.blockedPct ?? 0} tone="accent" label={`${(data?.blockedPct ?? 0).toFixed(1)}%`} sub="blok." size={size === 'S' ? 64 : 76} />
+        <Ring value={data?.blockedPct ?? 0} tone="accent" label={`${(data?.blockedPct ?? 0).toFixed(1)}%`} sub="blocked" size={size === 'S' ? 64 : 76} />
         <div className="grid flex-1 grid-cols-2 gap-3">
-          <Stat label="Upiti" value={<AnimatedNumber value={data?.queries} />} />
-          <Stat label="Blokirano" value={<AnimatedNumber value={data?.blocked} />} />
-          {size !== 'S' && <Stat label="Odziv" value={`${data?.avgMs ?? '—'} ms`} />}
+          <Stat label="Queries" value={<AnimatedNumber value={data?.queries} />} />
+          <Stat label="Blocked" value={<AnimatedNumber value={data?.blocked} />} />
+          {size !== 'S' && <Stat label="Response" value={`${data?.avgMs ?? '—'} ms`} />}
           {size !== 'S' && (
             <div>
-              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Zaštita</div>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted">Protection</div>
               <div className={protectedOn ? 'flex items-center gap-1 text-sm font-semibold text-ok' : 'flex items-center gap-1 text-sm font-semibold text-warn'}>
-                {protectedOn ? <Shield className="size-4" /> : <ShieldOff className="size-4" />}{protectedOn ? 'Uključena' : data?.protectionDisabledUntil ? until(data.protectionDisabledUntil) : 'Isključena'}
+                {protectedOn ? <Shield className="size-4" /> : <ShieldOff className="size-4" />}{protectedOn ? 'Enabled' : data?.protectionDisabledUntil ? until(data.protectionDisabledUntil) : 'Disabled'}
               </div>
             </div>
           )}
@@ -104,8 +104,8 @@ export function AdguardStats({ data, size, instance }: WidgetProps) {
       {size !== 'S' && data?.hourly?.queries?.length > 0 && <div className="mt-auto"><Bars values={data.hourly.queries} values2={data.hourly.blocked} height={size === 'L' ? 70 : 44} /></div>}
       {size !== 'S' && instance && (
         <Button size="sm" variant={protectedOn ? 'soft' : 'primary'} icon={protectedOn ? <ShieldOff className="size-3.5" /> : <Shield className="size-3.5" />}
-          onClick={stop(() => runAction(instance.id, protectedOn ? 'pause' : 'resume', protectedOn ? { minutes: '10' } : {}, protectedOn ? '10 minuta' : undefined))}>
-          {protectedOn ? 'Pauziraj 10 min' : 'Uključi zaštitu'}
+          onClick={stop(() => runAction(instance.id, protectedOn ? 'pause' : 'resume', protectedOn ? { minutes: '10' } : {}, protectedOn ? '10 minutes' : undefined))}>
+          {protectedOn ? 'Pause for 10 min' : 'Enable protection'}
         </Button>
       )}
     </div>
@@ -129,9 +129,9 @@ export function AdguardTop({ data, size }: WidgetProps) {
   );
   return (
     <div className={size === 'M' ? 'scroll-thin flex h-full flex-col gap-3 overflow-y-auto' : 'grid h-full gap-4 overflow-hidden sm:grid-cols-3'}>
-      {block('Top domene', data?.topDomains)}
-      {block('Top blokirane', data?.topBlocked)}
-      {block('Top klijenti', data?.topClients)}
+      {block('Top domains', data?.topDomains)}
+      {block('Top blocked', data?.topBlocked)}
+      {block('Top clients', data?.topClients)}
     </div>
   );
 }
@@ -146,11 +146,11 @@ export function MikrotikTraffic({ data, state, size }: WidgetProps) {
       <div className="flex items-center gap-4">
         <div>
           <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted"><ArrowDown className="size-3 text-accent" />WAN ↓</div>
-          <div className="num text-xl font-semibold"><AnimatedNumber value={wan?.rxBps} format={(n) => bits(n)} /></div>
+          <div className="dot text-xl font-semibold"><AnimatedNumber value={wan?.rxBps} format={(n) => bits(n)} /></div>
         </div>
         <div>
           <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted"><ArrowUp className="size-3 text-ok" />WAN ↑</div>
-          <div className="num text-xl font-semibold"><AnimatedNumber value={wan?.txBps} format={(n) => bits(n)} /></div>
+          <div className="dot text-xl font-semibold"><AnimatedNumber value={wan?.txBps} format={(n) => bits(n)} /></div>
         </div>
         {size !== 'S' && (
           <div className="ml-auto grid gap-1 text-right text-xs text-muted">
@@ -164,7 +164,7 @@ export function MikrotikTraffic({ data, state, size }: WidgetProps) {
         <div className="absolute inset-0"><Sparkline data={tx} min={0} color="var(--color-ok)" fill={false} className="!h-full" /></div>
       </div>
       <div className="flex items-center gap-2 text-xs text-muted">
-        <StatusDot status={wan ? wan.running : null} size={6} /><span>{wan?.name ?? 'WAN nije postavljen'}</span>
+        <StatusDot status={wan ? wan.running : null} size={6} /><span>{wan?.name ?? 'WAN not configured'}</span>
         {size !== 'S' && <span className="ml-auto truncate">{data?.version} · up {data?.uptime}</span>}
       </div>
     </div>
@@ -184,7 +184,7 @@ export function MikrotikClients({ data, size }: WidgetProps) {
   return (
     <div className={size === 'M' ? 'flex h-full flex-col gap-3' : 'grid h-full gap-4 sm:grid-cols-2'}>
       <Section title={<span className="flex items-center gap-1"><Wifi className="size-3" />WireGuard</span>}>
-        <List>{(data?.peers ?? []).map((p: any, i: number) => <Row key={i} left={<StatusDot status={p.online} />} title={p.name} sub={p.endpoint ?? 'bez endpointa'} right={<span className="text-xs text-muted">{p.lastHandshake ?? '—'}</span>} />)}</List>
+        <List>{(data?.peers ?? []).map((p: any, i: number) => <Row key={i} left={<StatusDot status={p.online} />} title={p.name} sub={p.endpoint ?? 'no endpoint'} right={<span className="text-xs text-muted">{p.lastHandshake ?? '—'}</span>} />)}</List>
       </Section>
       <Section title={<span className="flex items-center gap-1"><Network className="size-3" />DHCP ({data?.leaseCount ?? 0})</span>}>
         <List>{(data?.leases ?? []).slice(0, 40).map((l: any) => <Row key={l.address} title={l.host || l.mac} sub={l.mac} right={<span className="num text-xs text-muted">{l.address}</span>} />)}</List>
@@ -201,12 +201,12 @@ export function PangolinSites({ data, size }: WidgetProps) {
       <List className="!flex-none">
         {sites.map((s: any) => (
           <Row key={s.id} left={s.online === null ? <Router className="size-4 text-muted" /> : <StatusDot status={s.online} />} title={s.name}
-            sub={`${s.type}${s.version ? ' · newt ' + s.version : ''} · ${s.resources ?? 0} resursa`}
+            sub={`${s.type}${s.version ? ' · newt ' + s.version : ''} · ${s.resources ?? 0} resources`}
             right={size !== 'S' && <span className="num text-xs text-muted">↓{bytes(s.mbIn * 1e6)} ↑{bytes(s.mbOut * 1e6)}</span>} />
         ))}
       </List>
       {size !== 'S' && (
-        <Section title="Resursi">
+        <Section title="Resources">
           <div className="flex flex-wrap gap-1.5">
             {(data?.resources ?? []).map((r: any) => (
               <Badge key={r.id} tone={!r.enabled ? 'muted' : r.sitesOnline === r.sitesTotal ? 'ok' : 'bad'}><Globe className="size-3" />{r.domain ?? r.name}</Badge>

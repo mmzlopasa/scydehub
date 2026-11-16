@@ -15,19 +15,19 @@ const pairs = (arr: any[] | undefined, n = 8): [string, number][] =>
 function finish(d: AdguardData) {
   return {
     status: d.protection ? ('up' as const) : ('degraded' as const),
-    summary: `${d.blockedPct}% blokirano · ${d.queries.toLocaleString('hr')} upita`,
+    summary: `${d.blockedPct}% blocked · ${d.queries.toLocaleString('en-US')} queries`,
     data: d,
     metrics: { queries: d.queries, blocked: d.blocked, blocked_pct: d.blockedPct, avg_ms: d.avgMs },
-    alerts: d.protection ? [] : [{ key: 'protection', severity: 'warning' as const, message: 'AdGuard zaštita je isključena' }],
+    alerts: d.protection ? [] : [{ key: 'protection', severity: 'warning' as const, message: 'AdGuard protection is disabled' }],
   };
 }
 
 export const adguard: Plugin<Cfg, AdguardData> = {
   id: 'adguard', name: 'AdGuard Home', icon: 'adguard-home', category: 'network',
-  description: 'DNS upiti, postotak blokiranih, top domene i klijenti, zaštita on/off.',
+  description: 'DNS queries, blocked percentage, top domains and clients, protection on/off.',
   docsUrl: 'https://github.com/AdguardTeam/AdGuardHome/tree/master/openapi',
   defaultInterval: 30,
-  fields: [urlField('http://192.168.1.2'), { key: 'username', label: 'Korisnik', type: 'string', required: true }, { key: 'password', label: 'Lozinka', type: 'secret', required: true }, ...tlsFields],
+  fields: [urlField('http://192.168.1.2'), { key: 'username', label: 'Username', type: 'string', required: true }, { key: 'password', label: 'Password', type: 'secret', required: true }, ...tlsFields],
   http: (c) => ({ headers: { Authorization: 'Basic ' + Buffer.from(`${c.username}:${c.password}`).toString('base64') } }),
   async collect({ http }) {
     const [status, stats] = await Promise.all([http.get<any>('/control/status'), http.get<any>('/control/stats')]);
@@ -60,23 +60,23 @@ export const adguard: Plugin<Cfg, AdguardData> = {
   },
   actions: [
     {
-      id: 'pause', label: 'Pauziraj zaštitu', danger: true,
-      params: [{ key: 'minutes', label: 'Minuta', type: 'select', options: [{ value: '1', label: '1 min' }, { value: '10', label: '10 min' }, { value: '60', label: '1 h' }, { value: '0', label: 'Do ponovnog uključenja' }], default: '10' }],
+      id: 'pause', label: 'Pause protection', danger: true,
+      params: [{ key: 'minutes', label: 'Minutes', type: 'select', options: [{ value: '1', label: '1 min' }, { value: '10', label: '10 min' }, { value: '60', label: '1 h' }, { value: '0', label: 'Until re-enabled' }], default: '10' }],
       run: async ({ http }, p) => {
         const m = Number(p.minutes ?? 10);
         await http.post('/control/protection', m > 0 ? { enabled: false, duration: m * 60_000 } : { enabled: false });
-        return m > 0 ? `Zaštita pauzirana ${m} min` : 'Zaštita isključena';
+        return m > 0 ? `Protection paused for ${m} min` : 'Protection disabled';
       },
-      mock: (ctx, p) => { ctx.scratch.mockOff = Date.now() + (Number(p.minutes) || 600) * 60_000; return 'Zaštita pauzirana (mock)'; },
+      mock: (ctx, p) => { ctx.scratch.mockOff = Date.now() + (Number(p.minutes) || 600) * 60_000; return 'Protection paused (mock)'; },
     },
     {
-      id: 'resume', label: 'Uključi zaštitu',
-      run: async ({ http }) => { await http.post('/control/protection', { enabled: true }); return 'Zaštita uključena'; },
-      mock: (ctx) => { ctx.scratch.mockOff = 0; return 'Zaštita uključena (mock)'; },
+      id: 'resume', label: 'Enable protection',
+      run: async ({ http }) => { await http.post('/control/protection', { enabled: true }); return 'Protection enabled'; },
+      mock: (ctx) => { ctx.scratch.mockOff = 0; return 'Protection enabled (mock)'; },
     },
   ],
   widgets: [
-    { id: 'stats', name: 'AdGuard statistika', description: 'Upiti, blokirano, graf po satima', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
-    { id: 'top', name: 'AdGuard top liste', description: 'Top domene, blokirane domene i klijenti', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
+    { id: 'stats', name: 'AdGuard statistics', description: 'Queries, blocked, hourly chart', sizes: ['S', 'M', 'L'], defaultSize: 'M' },
+    { id: 'top', name: 'AdGuard top lists', description: 'Top domains, blocked domains and clients', sizes: ['M', 'L', 'XL'], defaultSize: 'L' },
   ],
 };

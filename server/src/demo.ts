@@ -55,7 +55,7 @@ export function seedDemo() {
       q.run('INSERT INTO widgets (id, board_id, kind, instance_id, title, size, options, created_at) VALUES (?,?,?,?,?,?,?,?)',
         randomId(), board, kind, instance?.id ?? null, title ?? null, size, JSON.stringify(options), t++);
 
-    const ov = board('Pregled', 'layout-dashboard');
+    const ov = board('Overview', 'layout-dashboard');
     w(ov, 'core.clock', 'S');
     w(ov, 'core.weather', 'S');
     w(ov, 'proxmox.summary', 'M', I.pve);
@@ -82,7 +82,7 @@ export function seedDemo() {
     w(media, 'immich.library', 'M', I.immich);
     w(media, 'mediarr.library', 'S', I.mediarr);
 
-    const infra = board('Infrastruktura', 'server');
+    const infra = board('Infrastructure', 'server');
     w(infra, 'proxmox.summary', 'M', I.pve);
     w(infra, 'proxmox.storage', 'M', I.pve);
     w(infra, 'core.chart', 'M', I.pve, { metrics: ['cpu', 'mem'], range: 6 }, 'Proxmox CPU / RAM');
@@ -91,7 +91,7 @@ export function seedDemo() {
     w(infra, 'vaultwarden.status', 'S', I.vault);
     w(infra, 'core.checks', 'L');
 
-    const net = board('Mreža', 'network');
+    const net = board('Network', 'network');
     w(net, 'mikrotik.traffic', 'L', I.mikrotik);
     w(net, 'mikrotik.interfaces', 'M', I.mikrotik);
     w(net, 'mikrotik.clients', 'M', I.mikrotik);
@@ -102,9 +102,9 @@ export function seedDemo() {
     const host = board('Hosting', 'globe');
     w(host, 'whm.server', 'M', I.whm);
     w(host, 'cpanel.accounts', 'L', I.cpanel);
-    w(host, 'core.checks', 'M', undefined, { types: ['ssl', 'http'] }, 'Web i certifikati');
+    w(host, 'core.checks', 'M', undefined, { types: ['ssl', 'http'] }, 'Web and certificates');
     w(host, 'core.bookmarks', 'S', undefined, { links: [{ name: 'WHM', url: 'https://server.example.com:2087' }, { name: 'Proxmox', url: 'https://192.168.1.10:8006' }, { name: 'AdGuard', url: 'http://192.168.1.2' }] });
-    w(host, 'core.notes', 'S', undefined, { text: '## Bilješke\n- Obnoviti domenu scyde.net u ožujku\n- Provjeriti PBS retention' });
+    w(host, 'core.notes', 'S', undefined, { text: '## Notes\n- Renew the scyde.net domain in March\n- Check PBS retention' });
   }
   return { instances: Object.keys(I).length };
 }

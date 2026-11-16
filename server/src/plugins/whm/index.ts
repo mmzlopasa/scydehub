@@ -17,15 +17,15 @@ function unwrap<T>(r: any): T {
 }
 
 function finish(d: WhmData) {
-  const alerts: PluginAlert[] = d.services.filter((s) => s.enabled && s.running === false).map((s) => ({ key: `svc:${s.name}`, severity: 'critical', message: `Servis ${s.display} ne radi` }));
-  if (d.backup.enabled === false) alerts.push({ key: 'backup:disabled', severity: 'warning', message: 'Backup na WHM-u je isključen' });
+  const alerts: PluginAlert[] = d.services.filter((s) => s.enabled && s.running === false).map((s) => ({ key: `svc:${s.name}`, severity: 'critical', message: `Service ${s.display} is not running` }));
+  if (d.backup.enabled === false) alerts.push({ key: 'backup:disabled', severity: 'warning', message: 'WHM backup is disabled' });
   if (d.backup.lastDate) {
     const age = (Date.now() - new Date(d.backup.lastDate).getTime()) / 86400_000;
-    if (age > 2) alerts.push({ key: 'backup:age', severity: 'warning', message: `Zadnji WHM backup je star ${Math.floor(age)} d` });
+    if (age > 2) alerts.push({ key: 'backup:age', severity: 'warning', message: `Last WHM backup is ${Math.floor(age)} d old` });
   }
   return {
     status: alerts.some((a) => a.severity === 'critical') ? ('degraded' as const) : ('up' as const),
-    summary: `Load ${d.load.one} · ${d.accounts.total} računa${d.accounts.suspended ? ` (${d.accounts.suspended} susp.)` : ''}`,
+    summary: `Load ${d.load.one} · ${d.accounts.total} accounts${d.accounts.suspended ? ` (${d.accounts.suspended} susp.)` : ''}`,
     data: d, alerts,
     metrics: { load1: d.load.one, load5: d.load.five, accounts: d.accounts.total, suspended: d.accounts.suspended },
   };
@@ -33,13 +33,13 @@ function finish(d: WhmData) {
 
 export const whm: Plugin<Cfg, WhmData> = {
   id: 'whm', name: 'WHM', icon: 'cpanel', category: 'hosting',
-  description: 'Load, servisi, broj računa, suspendirani računi, backup status.',
+  description: 'Load, services, account count, suspended accounts, backup status.',
   docsUrl: 'https://api.docs.cpanel.net/whm/introduction',
   defaultInterval: 60,
   fields: [
     { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://server.example.com:2087' },
-    { key: 'username', label: 'Korisnik', type: 'string', default: 'root', required: true },
-    { key: 'token', label: 'API token', type: 'secret', required: true, help: 'Zaseban token s minimalnim ACL-ovima (list-accts, status, backup)' },
+    { key: 'username', label: 'Username', type: 'string', default: 'root', required: true },
+    { key: 'token', label: 'API token', type: 'secret', required: true, help: 'Dedicated token with minimal ACLs (list-accts, status, backup)' },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: `whm ${c.username}:${c.token}` } }),
@@ -78,5 +78,5 @@ export const whm: Plugin<Cfg, WhmData> = {
       backup: { enabled: true, lastDate: new Date(Date.now() - 20 * 3600_000).toISOString().slice(0, 10) }, version: '11.130.0.9',
     });
   },
-  widgets: [{ id: 'server', name: 'WHM server', description: 'Load, servisi, računi, backup', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
+  widgets: [{ id: 'server', name: 'WHM server', description: 'Load, services, accounts, backup', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],
 };

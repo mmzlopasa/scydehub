@@ -12,7 +12,7 @@ RUN npm run build -w web && npm run build -w server && npm prune --omit=dev
 
 # ---------- runtime ----------
 FROM node:22-alpine
-ARG VERSION=0.1.0
+ARG VERSION=0.2.0
 ARG BUILD_ID=dev
 # iputils: real ICMP ping (unprivileged via net.ipv4.ping_group_range), tini: proper signal handling
 RUN apk add --no-cache iputils tini ca-certificates tzdata
@@ -27,7 +27,7 @@ COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/server/dist ./dist
 COPY --from=build /app/server/package.json ./package.json
 COPY --from=build /app/web/dist /app/web/dist
-RUN mkdir -p /data && chown node:node /data
+RUN mkdir -p /data && chown node:node /data && chmod 700 /data
 USER node
 VOLUME /data
 EXPOSE 8484

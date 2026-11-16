@@ -16,7 +16,7 @@ export default defineConfig({
       manifest: {
         name: 'SCYDE Hub',
         short_name: 'SCYDE Hub',
-        description: 'Homelab dashboard i monitoring',
+        description: 'Homelab dashboard and monitoring',
         theme_color: '#0b0b12',
         background_color: '#0b0b12',
         display: 'fullscreen',

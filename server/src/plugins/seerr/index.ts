@@ -8,7 +8,7 @@ export interface SeerrRequest {
 }
 export interface SeerrData { version?: string; counts: Record<string, number>; pending: SeerrRequest[]; recent: SeerrRequest[] }
 
-const REQ_STATUS: Record<number, string> = { 1: 'Na čekanju', 2: 'Odobreno', 3: 'Odbijeno', 4: 'Neuspjelo', 5: 'Završeno' };
+const REQ_STATUS: Record<number, string> = { 1: 'Pending', 2: 'Approved', 3: 'Declined', 4: 'Failed', 5: 'Completed' };
 
 async function titleFor(ctx: PluginContext<Cfg>, type: string, tmdbId: number) {
   const cache: Record<string, any> = (ctx.scratch.titles ??= {});
@@ -33,7 +33,7 @@ async function mapReq(ctx: PluginContext<Cfg>, r: any): Promise<SeerrRequest> {
 
 export const seerr: Plugin<Cfg, SeerrData> = {
   id: 'seerr', name: 'Seerr', icon: 'jellyseerr', category: 'media',
-  description: 'Zahtjevi za filmove i serije: na čekanju, odobreni, u obradi, dostupni. Odobri/odbij iz dashboarda.',
+  description: 'Movie and series requests: pending, approved, processing, available. Approve/decline from the dashboard.',
   docsUrl: 'https://docs.seerr.dev/',
   defaultInterval: 60,
   fields: [urlField('http://192.168.1.20:5055'), apiKeyField(), ...tlsFields],
@@ -49,7 +49,7 @@ export const seerr: Plugin<Cfg, SeerrData> = {
     const p = await Promise.all((pending.results ?? []).map((r: any) => mapReq(ctx, r)));
     const rc = await Promise.all((recent.results ?? []).map((r: any) => mapReq(ctx, r)));
     return {
-      status: 'up', summary: `${counts.pending ?? 0} na čekanju`,
+      status: 'up', summary: `${counts.pending ?? 0} pending`,
       data: { version: (status as any).version, counts, pending: p, recent: rc },
       metrics: { pending: counts.pending ?? 0, processing: counts.processing ?? 0, available: counts.available ?? 0 },
     };
@@ -64,24 +64,24 @@ export const seerr: Plugin<Cfg, SeerrData> = {
     }));
     const pending = (ctx.scratch.mockHandled ? reqs.filter((r) => !ctx.scratch.mockHandled.includes(r.id)) : reqs).filter((r) => r.status === 1);
     return {
-      status: 'up', summary: `${pending.length} na čekanju`,
+      status: 'up', summary: `${pending.length} pending`,
       data: { version: '3.0.0', counts: { total: 312, movie: 201, tv: 111, pending: pending.length, approved: 290, declined: 6, processing: 4, available: 280 }, pending, recent: reqs },
       metrics: { pending: pending.length, processing: 4, available: 280 },
     };
   },
   actions: [
     {
-      id: 'approve', label: 'Odobri zahtjev', params: [{ key: 'id', label: 'Request ID', type: 'number', required: true }],
-      run: async ({ http }, p) => { await http.post(`/api/v1/request/${Number(p.id)}/approve`, {}); return `Zahtjev ${p.id} odobren`; },
-      mock: (ctx, p) => { (ctx.scratch.mockHandled ??= []).push(Number(p.id)); return `Zahtjev ${p.id} odobren (mock)`; },
+      id: 'approve', label: 'Approve request', params: [{ key: 'id', label: 'Request ID', type: 'number', required: true }],
+      run: async ({ http }, p) => { await http.post(`/api/v1/request/${Number(p.id)}/approve`, {}); return `Request ${p.id} approved`; },
+      mock: (ctx, p) => { (ctx.scratch.mockHandled ??= []).push(Number(p.id)); return `Request ${p.id} approved (mock)`; },
     },
     {
-      id: 'decline', label: 'Odbij zahtjev', danger: true, params: [{ key: 'id', label: 'Request ID', type: 'number', required: true }],
-      run: async ({ http }, p) => { await http.post(`/api/v1/request/${Number(p.id)}/decline`, {}); return `Zahtjev ${p.id} odbijen`; },
-      mock: (ctx, p) => { (ctx.scratch.mockHandled ??= []).push(Number(p.id)); return `Zahtjev ${p.id} odbijen (mock)`; },
+      id: 'decline', label: 'Decline request', danger: true, params: [{ key: 'id', label: 'Request ID', type: 'number', required: true }],
+      run: async ({ http }, p) => { await http.post(`/api/v1/request/${Number(p.id)}/decline`, {}); return `Request ${p.id} declined`; },
+      mock: (ctx, p) => { (ctx.scratch.mockHandled ??= []).push(Number(p.id)); return `Request ${p.id} declined (mock)`; },
     },
   ],
   widgets: [
-    { id: 'requests', name: 'Seerr zahtjevi', description: 'Zahtjevi na čekanju s odobri/odbij', sizes: ['S', 'M', 'L', 'XL'], defaultSize: 'M' },
+    { id: 'requests', name: 'Seerr requests', description: 'Pending requests with approve/decline', sizes: ['S', 'M', 'L', 'XL'], defaultSize: 'M' },
   ],
 };

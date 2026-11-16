@@ -8,15 +8,22 @@ export function resolveLayout(widgets: WidgetRow[], saved: LayoutItem[] | undefi
   const cols = GRID[profile].cols;
   const ids = new Set(widgets.map((w) => w.id));
   const out: LayoutItem[] = [];
-  const src = saved ?? scaleLayout(fallback, cols);
-  for (const l of src ?? []) if (ids.has(l.i)) out.push({ i: l.i, x: Math.min(l.x, cols - 1), y: l.y, w: Math.min(l.w, cols), h: l.h });
+  const src = Array.isArray(saved) ? saved : scaleLayout(Array.isArray(fallback) ? fallback : undefined, cols);
+  for (const l of src ?? []) {
+    if (!l || !ids.has(l.i)) continue;
+    const w = Math.max(1, Math.min(Number(l.w) || 1, cols));
+    out.push({ i: l.i, x: Math.max(0, Math.min(Number(l.x) || 0, cols - w)), y: Math.max(0, Number(l.y) || 0), w, h: Math.max(1, Number(l.h) || 1) });
+  }
   const placed = new Set(out.map((l) => l.i));
+  const fresh: LayoutItem[] = [];
   for (const w of widgets) {
     if (placed.has(w.id)) continue;
     const s = SIZE_GRID[w.size] ?? SIZE_GRID.M;
-    const ww = profile === 'mobile' ? cols : Math.min(cols, Math.round((s.w / 12) * cols) || 1);
+    const ww = profile === 'mobile' ? cols : Math.min(cols, Math.max(2, Math.round((s.w / 24) * cols)));
     const pos = findSpot(out, ww, s.h, cols);
-    out.push({ i: w.id, ...pos, w: ww, h: s.h });
+    const item = { i: w.id, ...pos, w: ww, h: s.h };
+    out.push(item);
+    fresh.push(item);
   }
   // nothing saved yet → widen auto-placed widgets into empty space on their right so rows look full
   if (!src) stretch(out, cols);
@@ -38,20 +45,20 @@ function stretch(items: LayoutItem[], cols: number) {
 
 function scaleLayout(l: LayoutItem[] | undefined, cols: number) {
   if (!l) return undefined;
-  if (cols === 12) return l;
-  if (cols <= 4) {
-    // mobile: single column, keep visual order
+  if (cols === 24) return l;
+  if (cols <= 8) {
+    // phone: single column, keep the visual order
     let y = 0;
     return [...l].sort((a, b) => a.y - b.y || a.x - b.x).map((it) => { const r = { ...it, x: 0, y, w: cols }; y += it.h; return r; });
   }
-  return l.map((it) => ({ ...it, x: Math.round((it.x / 12) * cols), w: Math.max(2, Math.round((it.w / 12) * cols)) }));
+  return l.map((it) => ({ ...it, x: Math.round((it.x / 24) * cols), w: Math.max(2, Math.round((it.w / 24) * cols)) }));
 }
 
-function findSpot(items: LayoutItem[], w: number, h: number, cols: number) {
-  for (let y = 0; y < 500; y++) {
+export function findSpot(items: LayoutItem[], w: number, h: number, cols: number) {
+  for (let y = 0; y < 2000; y++) {
     for (let x = 0; x + w <= cols; x++) {
       if (!items.some((it) => x < it.x + it.w && x + w > it.x && y < it.y + it.h && y + h > it.y)) return { x, y };
     }
   }
-  return { x: 0, y: 1000 };
+  return { x: 0, y: 2000 };
 }

@@ -1,9 +1,9 @@
 # Streamero → SCYDE Hub (`/api/stats`)
 
-Streamero je vlastita aplikacija, pa Hub očekuje jedan endpoint koji vraća gotovo stanje.
-Dodaj ga u Streamero (put i header za ključ se mogu promijeniti u postavkama servisa u Hubu).
+Streamero is a custom app, so the Hub expects one endpoint that returns ready-made state.
+Add it to Streamero (the path and the key header can be changed in the service settings in the Hub).
 
-`GET /api/stats` — header `X-Api-Key: <ključ>` (opcionalno)
+`GET /api/stats` — header `X-Api-Key: <key>` (optional)
 
 ```json
 {
@@ -12,7 +12,7 @@ Dodaj ga u Streamero (put i header za ključ se mogu promijeniti u postavkama se
     {
       "user": "Mislav",
       "title": "Dune: Part Two",
-      "subtitle": "S01E02 · Naslov epizode",
+      "subtitle": "S01E02 · Episode title",
       "progress": 42.5,
       "transcoding": false,
       "device": "Android TV",
@@ -22,10 +22,11 @@ Dodaj ga u Streamero (put i header za ključ se mogu promijeniti u postavkama se
   ],
   "library": { "movies": 1184, "shows": 214, "episodes": 9842, "sizeBytes": 14200000000000 },
   "recentlyAdded": [
-    { "title": "Conclave", "subtitle": "2024", "addedAt": "2026-11-16T09:00:00Z", "poster": "https://…" }
+    { "title": "Conclave", "subtitle": "2024", "addedAt": "2026-11-16T09:00:00Z" }
   ]
 }
 ```
 
-Sva polja osim `streams` su opcionalna. `progress` je 0–100, `bandwidth` u bit/s.
-Metrike koje Hub sprema u povijest: `streams`, `transcodes`, `bandwidth`.
+Every field except `streams` is optional. `progress` is 0–100, `bandwidth` is in bit/s.
+The stats path must be a path on the configured host (absolute URLs are refused).
+Metrics stored in history: `streams`, `transcodes`, `bandwidth`.

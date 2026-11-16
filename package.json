@@ -1,7 +1,7 @@
 {
   "name": "scydehub",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SCYDE Hub — self-hosted homelab dashboard & monitoring",
   "workspaces": ["server", "web"],
   "scripts": {

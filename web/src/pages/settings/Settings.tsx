@@ -1,22 +1,22 @@
 import { NavLink, Navigate, Route, Routes, Link } from 'react-router-dom';
 import { Server, Activity, Bell, Siren, LayoutGrid, MonitorPlay, Palette, Shield, ScrollText, HardDrive, ArrowLeft } from 'lucide-react';
 import { cx } from '../../components/ui';
-import { Logo } from '../../components/Shell';
+import { Brand as Logo } from '../../components/Brand';
 import { Services } from './Services';
 import { Checks } from './Checks';
 import { Alerts } from './Alerts';
 import { Incidents } from './Incidents';
 import { Boards } from './Boards';
 import { KioskSettings } from './KioskSettings';
-import { Appearance } from './Appearance';
+import { Customize } from './Customize';
 import { Security } from './Security';
 import { Audit } from './Audit';
 import { System } from './System';
 
 const NAV = [
-  ['services', 'Servisi', Server], ['checks', 'Provjere', Activity], ['alerts', 'Alerti i kanali', Bell], ['incidents', 'Incidenti', Siren],
-  ['boards', 'Stranice', LayoutGrid], ['kiosk', 'Kiosk i uređaji', MonitorPlay], ['appearance', 'Izgled', Palette], ['security', 'Sigurnost', Shield],
-  ['audit', 'Audit log', ScrollText], ['system', 'Backup i sustav', HardDrive],
+  ['services', 'Services', Server], ['checks', 'Checks', Activity], ['alerts', 'Alerts & channels', Bell], ['incidents', 'Incidents', Siren],
+  ['boards', 'Boards', LayoutGrid], ['kiosk', 'Kiosk & devices', MonitorPlay], ['customize', 'Customize', Palette], ['security', 'Security', Shield],
+  ['audit', 'Audit log', ScrollText], ['system', 'Backup & system', HardDrive],
 ] as const;
 
 export function SettingsPage() {
@@ -42,7 +42,8 @@ export function SettingsPage() {
           <Route path="incidents" element={<Incidents />} />
           <Route path="boards" element={<Boards />} />
           <Route path="kiosk" element={<KioskSettings />} />
-          <Route path="appearance" element={<Appearance />} />
+          <Route path="customize" element={<Customize />} />
+          <Route path="appearance" element={<Navigate to="/settings/customize" replace />} />
           <Route path="security" element={<Security />} />
           <Route path="audit" element={<Audit />} />
           <Route path="system" element={<System />} />

@@ -5,7 +5,7 @@ import type { Size, WidgetRow } from '../lib/types';
 import { coreDef } from '../widgets/registry';
 import { SIZE_GRID } from '../widgets/types';
 import { GRID, type Profile } from '../lib/device';
-import { Button, Input, Label, Modal, Segmented, Toggle, inputCls } from './ui';
+import { Button, ColorInput, ImagePicker, Input, Label, Modal, Segmented, Toggle, inputCls } from './ui';
 import { FieldInput } from './FieldInput';
 import { toast } from './feedback';
 
@@ -48,32 +48,51 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
         // resize this widget on every saved device layout
         const b = boards.find((x) => x.id === widget.board_id);
         for (const [profile, l] of Object.entries(b?.layouts ?? {})) {
-          const cols = GRID[profile as Profile]?.cols ?? 12;
-          const next = l.map((it) => (it.i === widget.id ? { ...it, w: profile === 'mobile' ? cols : Math.max(2, Math.round((SIZE_GRID[size].w / 12) * cols)), h: SIZE_GRID[size].h } : it));
+          const cols = GRID[profile as Profile]?.cols ?? 24;
+          const next = l.map((it) => (it.i === widget.id ? { ...it, w: profile === 'mobile' ? cols : Math.max(2, Math.round((SIZE_GRID[size].w / 24) * cols)), h: SIZE_GRID[size].h } : it));
           await put(`/api/boards/${widget.board_id}/layout/${profile}`, { layout: next });
         }
       }
-      toast('Widget spremljen');
+      toast('Widget saved');
       onClose();
     } catch (e: any) { toast(e.message, 'bad'); }
   };
 
   return (
-    <Modal open onClose={onClose} title="Postavke widgeta" footer={<><Button variant="ghost" onClick={onClose}>Odustani</Button><Button variant="primary" onClick={save}>Spremi</Button></>}>
+    <Modal open wide onClose={onClose} title="Widget settings" footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="space-y-4">
-        <Label><span className="text-xs font-medium text-muted">Naslov</span><Input value={title} placeholder="Zadani naslov" onChange={(e) => setTitle(e.target.value)} /></Label>
-        <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Veličina (S, M, L, XL — više detalja na većim)</div>
+        <Label><span className="text-xs font-medium text-muted">Title</span><Input value={title} placeholder="Default title" onChange={(e) => setTitle(e.target.value)} /></Label>
+        <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Size (S, M, L, XL — larger sizes show more detail)</div>
           <Segmented value={size} onChange={setSize} options={(['S', 'M', 'L', 'XL'] as Size[]).map((s) => ({ value: s, label: s }))} />
         </div>
         {widget.instance_id && sameTypeInstances.length > 1 && (
-          <Label><span className="text-xs font-medium text-muted">Servis</span>
+          <Label><span className="text-xs font-medium text-muted">Service</span>
             <select className={inputCls} value={instanceId ?? ''} onChange={(e) => setInstanceId(e.target.value)}>{sameTypeInstances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
           </Label>
         )}
         {(core?.options ?? []).map((f) => <FieldInput key={f.key} field={f} value={opts[f.key]} onChange={(v) => setOpts((s) => ({ ...s, [f.key]: v }))} />)}
-        {widget.kind === 'core.chart' && <div className="text-xs text-muted">Dostupne metrike vidiš u detaljnom panelu servisa (npr. cpu, mem, queue, dl, wan_rx, _latency).</div>}
-        <Toggle checked={!!opts.hideHeader} onChange={(v) => setOpts((s) => ({ ...s, hideHeader: v }))} label="Sakrij zaglavlje" />
-        <Label><span className="text-xs font-medium text-muted">Stranica</span>
+        {widget.kind === 'core.chart' && <div className="text-xs text-muted">Available metrics are listed in the service detail panel (e.g. cpu, mem, queue, dl, wan_rx, _latency).</div>}
+        <div className="space-y-3 rounded-2xl border border-line p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Look of this widget</div>
+          <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Icon (dashboard-icons name, image URL or upload)</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input className="max-w-[220px]" placeholder="e.g. proxmox, plex, home-assistant" value={typeof opts.icon === 'string' && !opts.icon.startsWith('data:') ? opts.icon : ''} onChange={(e) => setOpts((s) => ({ ...s, icon: e.target.value.trim() }))} />
+              <ImagePicker value={typeof opts.icon === 'string' && /^(data:|https:)/.test(opts.icon) ? opts.icon : ''} onChange={(v) => setOpts((s) => ({ ...s, icon: v }))} maxKb={120} />
+            </div>
+          </div>
+          <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Accent colour (empty = theme colour)</div>
+            <div className="flex items-center gap-2">
+              <ColorInput value={opts.accent ?? ''} onChange={(v) => setOpts((s) => ({ ...s, accent: v }))} presets={['#FFD76A', '#8B7CFF', '#34D399', '#38BDF8', '#FF7A8A', '#F472B6']} />
+              {opts.accent && <Button size="sm" variant="ghost" onClick={() => setOpts((s) => ({ ...s, accent: '' }))}>Clear</Button>}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
+            <Toggle checked={!!opts.hideHeader} onChange={(v) => setOpts((s) => ({ ...s, hideHeader: v }))} label="Hide header" />
+            <Toggle checked={!!opts.transparent} onChange={(v) => setOpts((s) => ({ ...s, transparent: v }))} label="No card (transparent)" />
+            <Toggle checked={!!opts.noPadding} onChange={(v) => setOpts((s) => ({ ...s, noPadding: v }))} label="Edge to edge (no padding)" />
+          </div>
+        </div>
+        <Label><span className="text-xs font-medium text-muted">Board</span>
           <select className={inputCls} value={boardId} onChange={(e) => setBoardId(e.target.value)}>{boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
         </Label>
       </div>
