@@ -1,0 +1,27 @@
+# Alternative: you already run nginx on the host (e.g. hosting server) and use `certbot --nginx`.
+# 1) In .env set HUB_BIND=127.0.0.1 and SCYDE_SECURE_COOKIES=1, run `docker compose up -d`.
+# 2) Copy this to /etc/nginx/sites-available/scydehub, replace hub.example.com, enable it.
+# 3) sudo certbot --nginx -d hub.example.com
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    server_name hub.example.com;
+    listen 80;
+
+    # Allow only LAN / VPN (recommended — the Hub holds the keys to your whole homelab)
+    # allow 192.168.0.0/16; allow 10.0.0.0/8; allow 100.64.0.0/10; deny all;
+
+    client_max_body_size 20m;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+        proxy_buffering off;
+    }
+}

@@ -12,7 +12,6 @@ android/local.properties
 android/*.keystore
 # ios / capacitor
 ios/app/node_modules/
-ios/app/www/
 ios/app/ios/App/Pods/
 ios/app/ios/App/App/public/
 ios/app/ios/DerivedData/

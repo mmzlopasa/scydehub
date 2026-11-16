@@ -1,0 +1,15 @@
+{
+  "appId": "com.scyde.hub",
+  "appName": "SCYDE Hub",
+  "webDir": "www",
+  "backgroundColor": "#0a0a10",
+  "server": {
+    "allowNavigation": ["*"]
+  },
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "appendUserAgent": "SCYDEHubiOS/0.1",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

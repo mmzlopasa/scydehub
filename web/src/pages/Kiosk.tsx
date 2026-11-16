@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertOctagon, Pause, Play, Wifi, WifiOff } from 'lucide-react';
 import { useStore } from '../lib/store';
-import { post } from '../lib/api';
+import { kioskToken, post } from '../lib/api';
 import type { Profile } from '../lib/device';
 import { BoardView } from './Board';
 import { Button, cx } from '../components/ui';
@@ -87,6 +87,17 @@ export function Kiosk({ profile }: { profile: Profile }) {
   useEffect(() => { if (idx >= list.length) setIdx(0); }, [idx, list.length]);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [idx]);
 
+  // 5 quick taps on the clock: back to the native shell's setup screen (iOS app) or the token screen (browser)
+  const taps = useRef<number[]>([]);
+  const secretTap = () => {
+    const t = Date.now();
+    taps.current = [...taps.current.filter((x) => t - x < 2500), t];
+    if (taps.current.length < 5) return;
+    taps.current = [];
+    if (/SCYDEHubiOS/.test(navigator.userAgent)) location.href = 'capacitor://localhost/?setup=1';
+    else if (me?.auth?.kind === 'kiosk' && confirm('Odspojiti ovaj uređaj (zaboraviti kiosk token)?')) { kioskToken.clear(); location.assign('/kiosk'); }
+  };
+
   const board = list[idx];
   const dim = k?.nightDim?.enabled && inWindow(k.nightDim.start, k.nightDim.end, new Date(now)) ? k.nightDim.level : 0;
   const takeover = k?.alertTakeover !== false ? incidents.filter((i) => !i.resolved_at && !i.acked_at && i.severity === 'critical') : [];
@@ -102,7 +113,7 @@ export function Kiosk({ profile }: { profile: Profile }) {
           <div className="ml-auto flex items-center gap-4 text-sm">
             <span className={cx('num font-medium', sum.down ? 'text-bad' : 'text-ok')}>{sum.up}/{sum.total} online</span>
             {conn !== 'online' ? <WifiOff className="size-4 text-bad" /> : <Wifi className="size-4 text-muted" />}
-            <span className="num text-2xl font-semibold">{new Date(now).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="num select-none text-2xl font-semibold" onClick={secretTap}>{new Date(now).toLocaleTimeString('hr-HR', { hour: '2-digit', minute: '2-digit' })}</span>
           </div>
         </div>
         {board ? <div key={board.id} className="animate-fade-up"><BoardView board={board} profile={profile} editing={false} kiosk /></div> : <div className="py-20 text-center text-muted">Nema stranica.</div>}
