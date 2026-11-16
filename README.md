@@ -231,7 +231,8 @@ docs/integrations/ ugovori za vlastite /api/stats endpointe
 | Docker | runtime image pokrenut kroz `docker compose` (read-only FS, non-root, sysctl za ping, healthcheck) | `healthy`, login i SPA rade |
 | nginx | predložak renderiran u `nginx:1.27-alpine` s allowlistom i testnim certifikatom | `nginx -t` OK |
 | Android | `./gradlew assembleRelease` (AGP 8.7, SDK 35) | APK 34 KB; `aapt2` potvrđuje LAUNCHER i LEANBACK_LAUNCHER |
-| iOS | Xcode projekt generiran s `cap add ios --packagemanager SPM` | build tek na macOS runneru u GitHub Actionsu, ovdje nije pokrenut |
+| iOS | Xcode projekt generiran s `cap add ios --packagemanager SPM`; build na macOS runneru u GitHub Actionsu | `.ipa` artefakt napravljen; na uređaju još nije isproban |
+| GitHub Actions | CI (typecheck, testovi, build, multi-arch Docker image na GHCR), APK, IPA | sva tri workflowa prošla na prvom pushu |
 
 Nije testirano na pravim servisima jer ovo okruženje nema pristup homelabu. Integracije su napisane prema službenoj dokumentaciji, a u postavkama servisa postoji gumb **Testiraj vezu**.
 
