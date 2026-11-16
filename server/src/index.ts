@@ -46,10 +46,10 @@ await app.register(realtimeRoutes);
 if (existsSync(config.webDir)) {
   await app.register(fastifyStatic, {
     root: config.webDir,
-    wildcard: false,
+    wildcard: true,
     setHeaders(res, path) {
-      if (path.endsWith('index.html') || path.endsWith('sw.js') || path.endsWith('.webmanifest')) (res as any).setHeader('cache-control', 'no-cache');
-      else if (path.includes('/assets/')) (res as any).setHeader('cache-control', 'public, max-age=31536000, immutable');
+      if (path.endsWith('index.html') || path.endsWith('sw.js') || path.endsWith('.webmanifest')) res.header('cache-control', 'no-cache');
+      else if (path.includes('/assets/')) res.header('cache-control', 'public, max-age=31536000, immutable');
     },
   });
   // SPA fallback
