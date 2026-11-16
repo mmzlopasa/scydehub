@@ -31,7 +31,7 @@ server {
     include /etc/nginx/conf.d/allowlist.inc;
 
     location / {
-        proxy_pass http://hub:8080;
+        proxy_pass http://hub:8484;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -49,6 +49,6 @@ server {
     # health endpoint stays reachable for the external heartbeat even with an allowlist
     location = /healthz {
         allow all;
-        proxy_pass http://hub:8080;
+        proxy_pass http://hub:8484;
     }
 }

@@ -36,7 +36,7 @@ class SetupActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
-        val url = field("http://192.168.1.50:8080 ili https://hub.example.com", prefs.url, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        val url = field("http://192.168.1.50:8484 ili https://hub.example.com", prefs.url, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val token = field("sk_…", prefs.token, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
         val profiles = arrayOf("tv" to "TV (veći font, za daljinski)", "tablet" to "Tablet", "desktop" to "Monitor")
         val profileGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }

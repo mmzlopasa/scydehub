@@ -32,7 +32,7 @@ sed -i "s/^SCYDE_SECRET_KEY=.*/SCYDE_SECRET_KEY=$(openssl rand -hex 32)/" .env
 docker compose up -d --build
 ```
 
-Otvori `http://<ip-hosta>:8080`. Pri prvom pokretanju sučelje traži **kod za postavljanje**, a on je ispisan u logu:
+Otvori `http://<ip-hosta>:8484`. Pri prvom pokretanju sučelje traži **kod za postavljanje**, a on je ispisan u logu:
 
 ```bash
 docker compose logs hub | grep -A1 "kod"
@@ -43,6 +43,21 @@ Admina možeš napraviti i unaprijed, preko `SCYDE_ADMIN_PASSWORD` u `.env`.
 Ako želiš odmah vidjeti kako sve izgleda, idi na *Postavke → Backup i sustav → Učitaj demo*. To dodaje sve integracije u mock načinu i pet gotovih stranica.
 
 > `SCYDE_SECRET_KEY` šifrira sve spremljene API ključeve i lozinke (AES-256-GCM). Čuvaj ga izvan repozitorija. Bez njega se tajne iz backupa ne mogu dešifrirati.
+
+### Preko domene s Cloudflare Tunnelom (preporučeno)
+
+Ne trebaju ti nginx, certbot ni otvoreni portovi na routeru.
+
+1. U Cloudflare Zero Trust → *Networks → Tunnels* napravi tunel tipa *Cloudflared* i kopiraj token iz naredbe za Docker.
+2. U tunelu dodaj *Public hostname*: npr. `hub.tvojadomena.com`, servis `HTTP`, URL `hub:8484`.
+3. U `.env` postavi `TUNNEL_TOKEN=<token>` i `SCYDE_SECURE_COOKIES=1`.
+4. Pokreni:
+
+```bash
+docker compose --profile tunnel up -d --build
+```
+
+WebSocket radi kroz tunel bez dodatnih postavki. Hub je tada dostupan s interneta, pa obavezno uključi 2FA, a po želji i Cloudflare Access ispred domene. Ako koristiš Access, TV i iPad spajaj na lokalni URL (`http://<ip-hosta>:8484`), jer kiosk aplikacije ne mogu proći Access prijavu.
 
 ### Preko domene (nginx + certbot u Dockeru)
 
@@ -182,7 +197,7 @@ SCYDE_MOCK=1 SCYDE_ADMIN_PASSWORD=admin12345 npm run dev -w server
 npm run dev -w web
 ```
 
-Vite dev server (`:5173`) prosljeđuje `/api` i WebSocket na backend (`:8080`).
+Vite dev server (`:5173`) prosljeđuje `/api` i WebSocket na backend (`:8484`).
 
 ```bash
 npm test

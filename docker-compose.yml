@@ -1,5 +1,6 @@
 # SCYDE Hub
-#   Local (LAN):      docker compose up -d                      → http://<host>:8080
+#   Local (LAN):      docker compose up -d                      → http://<host>:8484
+#   Cloudflare Tunnel: TUNNEL_TOKEN in .env, then docker compose --profile tunnel up -d
 #   Domain + HTTPS:   ./deploy/init-letsencrypt.sh  (once), then docker compose --profile proxy up -d
 name: scydehub
 
@@ -16,7 +17,7 @@ services:
     environment:
       SCYDE_SECRET_KEY: ${SCYDE_SECRET_KEY:?Set SCYDE_SECRET_KEY in .env (openssl rand -hex 32)}
     ports:
-      - "${HUB_BIND:-0.0.0.0}:${HUB_PORT:-8080}:8080"
+      - "${HUB_BIND:-0.0.0.0}:${HUB_PORT:-8484}:8484"
     volumes:
       - ./data:/data
       # Optional: Docker integration via a read-only socket proxy is safer than mounting the socket directly
@@ -32,6 +33,18 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  # Cloudflare Tunnel: no open ports, no nginx/certbot. In the Cloudflare dashboard set the
+  # public hostname service to http://hub:8484
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:latest
+    container_name: scydehub-cloudflared
+    restart: unless-stopped
+    depends_on: [hub]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
 
   nginx:
     profiles: [proxy]

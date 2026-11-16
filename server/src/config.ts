@@ -19,7 +19,7 @@ function loadSecretKey(): string {
 }
 
 export const config = {
-  port: Number(process.env.PORT ?? 8080),
+  port: Number(process.env.PORT ?? 8484),
   host: process.env.HOST ?? '0.0.0.0',
   dataDir,
   dbPath: join(dataDir, 'scydehub.db'),

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const api = process.env.SCYDE_API ?? 'http://localhost:8080';
+const api = process.env.SCYDE_API ?? 'http://localhost:8484';
 
 export default defineConfig({
   plugins: [
