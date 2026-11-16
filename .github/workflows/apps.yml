@@ -1,0 +1,117 @@
+name: Apps (APK + IPA) and release
+
+# Builds the Android TV app and the unsigned iOS app, then publishes both on the Releases page.
+# Runs when the apps or the version change on main, on a v* tag, or by hand.
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'ios/**', 'package.json', '.github/workflows/apps.yml']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+  apk:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+      # Optional stable signing: add secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+      # Without them the APK is signed with a CI debug key (installs fine, but an update needs an uninstall when the key changes).
+      - name: Decode keystore
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        if: env.KS != ''
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+      - name: Build
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ needs.version.outputs.version }}
+        run: ./gradlew assembleRelease --no-daemon
+      - run: cp app/build/outputs/apk/release/app-release.apk scydehub-tv.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scydehub-tv-apk
+          path: android/scydehub-tv.apk
+
+  ipa:
+    needs: version
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx cap sync ios
+      - name: Build (no code signing — Feather signs it on the device)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="${{ needs.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} build
+      - name: Package .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry scydehub.ipa Payload
+          ls -la scydehub.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scydehub-ipa
+          path: ios/app/scydehub.ipa
+
+  release:
+    needs: [version, apk, ipa]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - run: ls -la dist
+      - name: Publish on the Releases page
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: SCYDE Hub ${{ needs.version.outputs.version }}
+          make_latest: true
+          body: |
+            **Apps for SCYDE Hub ${{ needs.version.outputs.version }}**
+
+            - `scydehub-tv.apk` — Android TV / Android. Install it, then enter the Hub URL and a kiosk token.
+            - `scydehub.ipa` — iPhone / iPad, unsigned. Sign and install it with Feather.
+
+            Kiosk tokens are created in the Hub under *Settings → Kiosk & devices*.
+            Built from commit ${{ github.sha }}.
+          files: |
+            dist/scydehub-tv.apk
+            dist/scydehub.ipa

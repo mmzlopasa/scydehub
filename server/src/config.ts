@@ -43,7 +43,7 @@ export const config = {
    */
   trustProxy: process.env.SCYDE_TRUST_PROXY ?? 'loopback,172.16.0.0/12',
   webDir: process.env.SCYDE_WEB_DIR ?? resolve(process.cwd(), '../web/dist'),
-  version: process.env.SCYDE_VERSION ?? '0.2.0',
+  version: process.env.SCYDE_VERSION ?? '0.2.1',
   // 'dev' (local docker build without BUILD_ID) falls back to the start time, so kiosks still reload after an update
   buildId: process.env.SCYDE_BUILD_ID && process.env.SCYDE_BUILD_ID !== 'dev' ? process.env.SCYDE_BUILD_ID : String(Date.now()),
   iconCdn: process.env.SCYDE_ICON_CDN ?? 'https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons',

@@ -116,8 +116,10 @@ Every client needs only the **Hub URL** and a **kiosk token** (*Settings → Kio
 | Client | Where to get it | Notes |
 | --- | --- | --- |
 | Monitor / mini PC | `https://hub/kiosk#token=…` | `chromium --kiosk --noerrdialogs "https://hub/kiosk#token=…"` |
-| Android TV | GitHub Actions → **Android TV APK** → artifact `scydehub-tv.apk` (also in Releases on a `v*` tag) | Left/right switches boards, OK pauses rotation, BACK twice or MENU opens setup. The token is stored encrypted with the Android Keystore. |
-| iPad / iPhone | GitHub Actions → **iOS IPA** → `scydehub.ipa` | Sign and install with Feather. Turn on *Guided Access*. Five quick taps on the kiosk clock return to setup. |
+| Android TV | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub-tv.apk` | Left/right switches boards, OK pauses rotation, BACK twice or MENU opens setup. The token is stored encrypted with the Android Keystore. |
+| iPad / iPhone | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub.ipa` | Sign and install with Feather. Turn on *Guided Access*. Five quick taps on the kiosk clock return to setup. |
+
+Both apps are built and published on the Releases page automatically whenever they or the version in `package.json` change on `main`.
 
 The token is passed in the URL fragment (`#token=`), which is never sent to a server or written to a proxy log.
 

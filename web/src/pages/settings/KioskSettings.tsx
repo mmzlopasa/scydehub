@@ -59,7 +59,7 @@ export function KioskSettings() {
 
       <Card className="space-y-3 text-sm">
         <h2 className="font-semibold">Device setup</h2>
-        <div className="flex gap-3"><Tv className="mt-0.5 size-5 shrink-0 text-accent" /><div><b>Android TV</b> — install <code>scydehub-tv.apk</code> (GitHub Actions → Releases). On first launch, enter the Hub URL (<code>{hub}</code>) and a kiosk token. Left/right arrows switch boards, OK pauses the rotation.</div></div>
+        <div className="flex gap-3"><Tv className="mt-0.5 size-5 shrink-0 text-accent" /><div><b>Android TV</b> — install <code>scydehub-tv.apk</code> (from the Releases page of the repository). On first launch, enter the Hub URL (<code>{hub}</code>) and a kiosk token. Left/right arrows switch boards, OK pauses the rotation.</div></div>
         <div className="flex gap-3"><Tablet className="mt-0.5 size-5 shrink-0 text-accent" /><div><b>iPad / iPhone</b> — sign <code>scydehub.ipa</code> with Feather and install it. Enter the URL and token. Turn on <i>Guided Access</i> (Settings → Accessibility) so the app can't be exited.</div></div>
         <div className="flex gap-3"><Monitor className="mt-0.5 size-5 shrink-0 text-accent" /><div><b>Monitor / mini PC</b> — open <code>{hub}/kiosk?profile=desktop#token=…</code> or run <code>chromium --kiosk --noerrdialogs --disable-session-crashed-bubble "{hub}/kiosk#token=…"</code>.</div></div>
       </Card>
