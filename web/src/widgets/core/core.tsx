@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Cloud, CloudRain, CloudSnow, CloudSun, Sun, CloudLightning, CloudFog, ExternalLink, AlertOctagon, CheckCircle2, BellOff } from 'lucide-react';
 import type { WidgetProps } from '../types';
 import { useStore } from '../../lib/store';
@@ -10,6 +10,7 @@ import { ago, dateLong, dateTime, duration, locale, time } from '../../lib/forma
 import { List, Row } from '../common';
 import { CalendarList } from '../services/arr';
 import { toast } from '../../components/feedback';
+import { metricFormat, metricLabel } from '../../lib/metrics';
 
 export function Clock({ size, w }: WidgetProps) {
   const now = useNow(1000);
@@ -141,17 +142,33 @@ export function Checks({ size, w }: WidgetProps) {
   );
 }
 
-const COLORS = ['var(--accent)', '#22c55e', '#f59e0b', '#38bdf8', '#ec4899', '#a3e635'];
+const COLORS = ['var(--accent)', 'var(--accent2-hi)', 'var(--ok)', '#38bdf8', '#ec4899', '#a3e635'];
 export function MetricChart({ w, instance }: WidgetProps) {
-  const metrics: string[] = w.options?.metrics ?? ['_latency'];
+  const metrics: string[] = Array.isArray(w.options?.metrics) && w.options.metrics.length ? w.options.metrics : ['_latency'];
   const range = Number(w.options?.range ?? 6);
   const series = metrics.map((m) => (m.startsWith('check:') || m.startsWith('inst:') ? m : `inst:${instance?.id}:${m}`));
   const data = useHistory(instance || series.every((s) => !s.includes('undefined')) ? series : [], range, 30);
+  // the chart fills whatever space the card has
+  const box = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState(140);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setH(Math.max(60, Math.floor(el.clientHeight))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fmt = metricFormat(metrics[0]);
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex flex-wrap gap-3 text-xs text-muted">{metrics.map((m, i) => <span key={m} className="flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{m}</span>)}</div>
-      <div className="min-h-0 flex-1">
-        <AreaChart height={140} series={series.map((s, i) => ({ key: s, label: metrics[i], color: COLORS[i % COLORS.length], data: data[s] ?? [] }))} yFormat={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(v < 10 ? 1 : 0))} />
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+        {metrics.map((m, i) => {
+          const last = data[series[i]]?.at(-1)?.v;
+          return <span key={m} className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />{metricLabel(m)}{last !== undefined && <b className="num font-medium text-fg">{metricFormat(m)(last)}</b>}</span>;
+        })}
+      </div>
+      <div ref={box} className="min-h-0 flex-1">
+        <AreaChart height={h} series={series.map((s, i) => ({ key: s, label: metricLabel(metrics[i]), color: COLORS[i % COLORS.length], data: data[s] ?? [], format: metricFormat(metrics[i]) }))} yFormat={fmt} />
       </div>
     </div>
   );

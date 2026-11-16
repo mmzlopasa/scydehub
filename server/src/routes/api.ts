@@ -16,6 +16,7 @@ import { ackIncident, type Incident } from '../alerts/engine.js';
 import { channelTypes, encodeChannelConfig, getChannelType, publicChannel, testChannel, upgradeChannelSecrets, type ChannelRow } from '../alerts/channels.js';
 import { allSettings, kioskSettings, publicBranding, updateSettings, DEFAULT_SETTINGS } from '../settings.js';
 import { seedDemo } from '../demo.js';
+import { BUILT_IN, exportTemplate, importTemplate, parseTemplate, type Template } from '../templates.js';
 
 type AnyBody = Record<string, any>;
 
@@ -500,6 +501,25 @@ export default async function apiRoutes(app: FastifyInstance) {
     resetChecks();
     changed('all');
     return { ok: true };
+  });
+
+  // board templates: boards + widgets + positions, no services and no secrets
+  const templateInfo = (t: Template) => ({ id: t.id, name: t.name, description: t.description, boards: t.boards.length, widgets: t.boards.reduce((n, b) => n + b.widgets.length, 0) });
+  app.get('/api/templates', { preHandler: requireAdmin }, async () => BUILT_IN.map(templateInfo));
+  app.get('/api/templates/export', { preHandler: requireAdmin }, async (_req, reply) => {
+    reply.header('content-disposition', `attachment; filename="scydehub-boards-${new Date().toISOString().slice(0, 10)}.json"`);
+    return exportTemplate();
+  });
+  app.get<{ Params: { id: string } }>('/api/templates/:id', { preHandler: requireAdmin }, async (req, reply) =>
+    BUILT_IN.find((t) => t.id === req.params.id) ?? reply.code(404).send({ error: 'not found' }));
+  app.post<{ Body: AnyBody }>('/api/templates/import', { preHandler: requireAdmin, bodyLimit: 4 * 1024 * 1024 }, async (req) => {
+    const b = obj(req.body);
+    const tpl = typeof b.id === 'string' ? BUILT_IN.find((t) => t.id === b.id) ?? bad('Unknown template') : parseTemplate(b.template);
+    const r = importTemplate(parseTemplate(tpl), { createMissing: b.createMissing === true, replace: b.replace === true });
+    for (const c of r.created) reschedule(c.id);
+    audit(req, 'template.import', tpl.name, { createMissing: b.createMissing === true, replace: b.replace === true, boards: r.boards, widgets: r.widgets }, true);
+    changed('all');
+    return r;
   });
 
   // demo data

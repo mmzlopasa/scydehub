@@ -5,6 +5,7 @@ import { Button, Input, Toggle, inputCls } from '../../components/ui';
 import { BOARD_ICONS, CoreIcon } from '../../components/icons';
 import { confirmDialog } from '../../components/feedback';
 import { PageHead, Card } from './Settings';
+import { Templates } from './Templates';
 
 export function Boards() {
   const boards = useStore((s) => s.boards);
@@ -17,6 +18,7 @@ export function Boards() {
     <>
       <PageHead title="Boards" desc="Boards and their order. Take a board out of the kiosk rotation if you don't want it on the TV."
         right={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => post('/api/boards', { name: 'New board', icon: 'layout-grid' })}>New board</Button>} />
+      <Templates />
       <div className="space-y-2">
         {boards.map((b, i) => (
           <Card key={b.id} className="!p-3">

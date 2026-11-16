@@ -134,3 +134,38 @@ test('http client refuses paths that leave the configured host', async () => {
   assert.throws(() => buildUrl('http://a:1', 'http://evil/steal'));
   assert.throws(() => buildUrl('http://a:1', '//evil/steal'));
 });
+
+test('board templates: built-in template is valid, covers every widget, imports cleanly', async () => {
+  const { COMPLETE, parseTemplate, importTemplate, exportTemplate } = await import('../src/templates.js');
+  const tpl = parseTemplate(JSON.parse(JSON.stringify(COMPLETE)));
+  // every widget of every integration appears at least once
+  const kinds = new Set(tpl.boards.flatMap((b) => b.widgets.map((w) => w.kind)));
+  for (const p of plugins) for (const w of p.widgets) assert.ok(kinds.has(`${p.id}.${w.id}`), `template is missing ${p.id}.${w.id}`);
+  // widgets of a plugin kind name that plugin
+  for (const b of tpl.boards) for (const w of b.widgets) {
+    if (!w.kind.startsWith('core.')) assert.equal(w.plugin, w.kind.split('.')[0], `${w.kind} has the wrong plugin`);
+    const [x, , ww] = w.layout.desktop!;
+    assert.ok(x + ww <= 24, `${b.name}/${w.kind} sticks out of the 24-column grid`);
+  }
+  // no two widgets overlap on a board
+  for (const b of tpl.boards) {
+    const r = b.widgets.map((w) => w.layout.desktop!);
+    for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+      const [ax, ay, aw, ah] = r[i], [bx, by, bw, bh] = r[j];
+      assert.ok(!(ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by), `${b.name}: ${b.widgets[i].kind} overlaps ${b.widgets[j].kind}`);
+    }
+  }
+  const before = q.get<{ n: number }>('SELECT COUNT(*) n FROM instances')!.n;
+  const skip = importTemplate(tpl, { createMissing: false, replace: false });
+  assert.ok(skip.skipped > 0 && skip.missing.length > 0, 'without createMissing, widgets of absent services are skipped');
+  assert.equal(q.get<{ n: number }>('SELECT COUNT(*) n FROM instances')!.n, before, 'no services created');
+  const full = importTemplate(tpl, { createMissing: true, replace: true });
+  assert.equal(full.skipped, 0);
+  assert.equal(full.boards, tpl.boards.length);
+  assert.equal(q.get<{ n: number }>('SELECT COUNT(*) n FROM boards')!.n, tpl.boards.length, 'replace removed the earlier boards');
+  for (const c of full.created) assert.equal(q.get<{ mock: number }>('SELECT mock FROM instances WHERE id = ?', c.id)!.mock, 1, 'placeholders are mock');
+  // round trip
+  const again = parseTemplate(JSON.parse(JSON.stringify(exportTemplate())));
+  assert.equal(again.boards.reduce((n, b) => n + b.widgets.length, 0), full.widgets);
+  assert.throws(() => parseTemplate({ app: 'scydehub-template', boards: [{ name: 'x', widgets: [{ kind: 'DROP TABLE', layout: {} }] }] }));
+});

@@ -111,11 +111,12 @@ export function AdguardStats({ data, size, instance }: WidgetProps) {
     </div>
   );
 }
-export function AdguardTop({ data, size }: WidgetProps) {
+export function AdguardTop({ data, size, rows }: WidgetProps) {
+  const fit = Math.max(3, Math.floor((rows * 39 - 95) / (size === 'M' ? 95 : 30)));
   const block = (title: string, list: [string, number][]) => (
     <Section title={title}>
       <div className="space-y-1">
-        {(list ?? []).slice(0, size === 'XL' ? 8 : 5).map(([k, v]) => {
+        {(list ?? []).slice(0, Math.min(fit, 10)).map(([k, v]) => {
           const max = list[0]?.[1] || 1;
           return (
             <div key={k} className="relative overflow-hidden rounded-lg px-2 py-1 text-xs">

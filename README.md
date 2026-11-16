@@ -89,6 +89,16 @@ More options sit next to the thing they change:
 - **Per widget** (edit mode → gear): title, icon, accent colour, size, hide the header, transparent card, edge-to-edge content, move to another board, duplicate.
 - **Per board** (*Settings → Boards*): name, icon, order, whether it rotates in kiosk mode.
 
+### Templates
+
+*Settings → Boards → Templates* imports ready-made boards with the widgets already arranged.
+
+- **Complete homelab** (built in, also in [templates/complete-homelab.json](templates/complete-homelab.json)): seven boards — Overview, Media, Infrastructure, Network, Hosting, Wall and Tools — with every widget of every integration.
+- A template holds boards, widgets and positions. It holds no services and no keys.
+- On import each widget attaches to your own service of that type. For types you do not have yet you choose: create a placeholder that runs in mock mode until you enter its real URL and key, or leave those widgets out.
+- New boards are added after yours unless you choose to replace them. Services are never deleted.
+- *Export my boards as a template* saves your own layout to a file, to share it or move it to another Hub.
+
 ### Arranging widgets
 
 Click **Edit** on a board.
@@ -250,11 +260,12 @@ deploy/            nginx template, certbot script, external heartbeat
 
 | Area | How | Result |
 | --- | --- | --- |
-| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation, path confinement | 11/11 pass |
+| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation, path confinement, board templates | 12/12 pass |
 | Types | `tsc` for server and web | clean |
 | Security, live | 22 requests against a running server: CSRF header, password re-confirmation, refusing to send a stored key to a new URL, kiosk role limits, token not accepted from the URL, input validation, lockout after failed sign-ins | all behave as designed |
 | WebSocket | Cross-site origin refused, kiosk token through the sub-protocol, connection closed on token revoke and on sign-out | all behave as designed |
 | UI | Chromium at 1600×1000, iPhone 13 and TV kiosk: sign-in, boards, edit mode, Customize, light theme, security page | no JavaScript errors |
+| Templates | The built-in template imported through the UI into an empty Hub; a test checks that it contains every widget, that nothing overlaps and that everything fits the grid | 7 boards, 62 widgets, no errors |
 | Free placement | A widget dragged into empty space stays there and survives a reload | works |
 | Android | `./gradlew assembleRelease` | builds |
 | Docker | The runtime image started through the hardened `docker-compose.yml`: the `init` step fixed the ownership of `./data`, the Hub ran as uid 1000 with no capabilities, a read-only filesystem and no tunnel token in its environment | healthy, sign-in works |

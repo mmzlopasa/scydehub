@@ -1,0 +1,993 @@
+{
+  "app": "scydehub-template",
+  "version": 1,
+  "id": "complete-homelab",
+  "name": "Complete homelab",
+  "description": "Seven boards with every widget of every integration: Overview, Media, Infrastructure, Network, Hosting, Wall and Tools.",
+  "services": [
+    {
+      "plugin": "proxmox",
+      "name": "Proxmox"
+    },
+    {
+      "plugin": "streamero",
+      "name": "Streamero"
+    },
+    {
+      "plugin": "mediarr",
+      "name": "Mediarr"
+    },
+    {
+      "plugin": "immich",
+      "name": "Immich"
+    },
+    {
+      "plugin": "radarr",
+      "name": "Radarr"
+    },
+    {
+      "plugin": "sonarr",
+      "name": "Sonarr"
+    },
+    {
+      "plugin": "bazarr",
+      "name": "Bazarr"
+    },
+    {
+      "plugin": "prowlarr",
+      "name": "Prowlarr"
+    },
+    {
+      "plugin": "seerr",
+      "name": "Seerr"
+    },
+    {
+      "plugin": "qbittorrent",
+      "name": "qBittorrent"
+    },
+    {
+      "plugin": "adguard",
+      "name": "AdGuard Home"
+    },
+    {
+      "plugin": "mikrotik",
+      "name": "MikroTik",
+      "config": {
+        "wanInterface": "ether1-wan"
+      }
+    },
+    {
+      "plugin": "pangolin",
+      "name": "Pangolin"
+    },
+    {
+      "plugin": "vaultwarden",
+      "name": "Vaultwarden"
+    },
+    {
+      "plugin": "whm",
+      "name": "WHM"
+    },
+    {
+      "plugin": "cpanel",
+      "name": "cPanel",
+      "config": {
+        "mode": "whm",
+        "accounts": "account1,account2"
+      }
+    },
+    {
+      "plugin": "docker",
+      "name": "Docker",
+      "config": {
+        "url": "http://docker-socket-proxy:2375"
+      }
+    },
+    {
+      "plugin": "prometheus",
+      "name": "Prometheus",
+      "config": {
+        "queries": "CPU temp = max(node_hwmon_temp_celsius) | °C\nLoad = node_load1 | \nDisk used = 100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100) | %\nUPS load = ups_load | %"
+      }
+    },
+    {
+      "plugin": "http-json",
+      "name": "Custom API",
+      "config": {
+        "fields": "Users = stats.users | \nRequests = stats.requests | /min\nErrors = stats.errors | \nQueue = stats.queue | "
+      }
+    }
+  ],
+  "boards": [
+    {
+      "name": "Overview",
+      "icon": "layout-dashboard",
+      "widgets": [
+        {
+          "kind": "core.clock",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              5,
+              6
+            ]
+          }
+        },
+        {
+          "kind": "core.weather",
+          "layout": {
+            "desktop": [
+              5,
+              0,
+              5,
+              6
+            ]
+          }
+        },
+        {
+          "kind": "core.summary",
+          "layout": {
+            "desktop": [
+              10,
+              0,
+              7,
+              6
+            ]
+          },
+          "title": "At a glance"
+        },
+        {
+          "kind": "core.incidents",
+          "layout": {
+            "desktop": [
+              17,
+              0,
+              7,
+              6
+            ]
+          }
+        },
+        {
+          "kind": "core.statuswall",
+          "layout": {
+            "desktop": [
+              0,
+              6,
+              10,
+              16
+            ]
+          }
+        },
+        {
+          "kind": "proxmox.summary",
+          "plugin": "proxmox",
+          "layout": {
+            "desktop": [
+              10,
+              6,
+              7,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "streamero.streams",
+          "plugin": "streamero",
+          "layout": {
+            "desktop": [
+              17,
+              6,
+              7,
+              8
+            ]
+          },
+          "title": "Now playing"
+        },
+        {
+          "kind": "qbittorrent.transfer",
+          "plugin": "qbittorrent",
+          "layout": {
+            "desktop": [
+              10,
+              14,
+              7,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "mikrotik.traffic",
+          "plugin": "mikrotik",
+          "layout": {
+            "desktop": [
+              17,
+              14,
+              7,
+              8
+            ]
+          },
+          "title": "Internet"
+        },
+        {
+          "kind": "adguard.stats",
+          "plugin": "adguard",
+          "layout": {
+            "desktop": [
+              0,
+              22,
+              8,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "seerr.requests",
+          "plugin": "seerr",
+          "layout": {
+            "desktop": [
+              8,
+              22,
+              8,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "core.checks",
+          "layout": {
+            "desktop": [
+              16,
+              22,
+              8,
+              9
+            ]
+          },
+          "title": "Uptime"
+        }
+      ]
+    },
+    {
+      "name": "Media",
+      "icon": "clapperboard",
+      "widgets": [
+        {
+          "kind": "streamero.streams",
+          "plugin": "streamero",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              8,
+              9
+            ]
+          },
+          "title": "Now playing"
+        },
+        {
+          "kind": "streamero.library",
+          "plugin": "streamero",
+          "layout": {
+            "desktop": [
+              8,
+              0,
+              8,
+              9
+            ]
+          },
+          "title": "Library"
+        },
+        {
+          "kind": "seerr.requests",
+          "plugin": "seerr",
+          "layout": {
+            "desktop": [
+              16,
+              0,
+              8,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "radarr.queue",
+          "plugin": "radarr",
+          "layout": {
+            "desktop": [
+              0,
+              9,
+              8,
+              10
+            ]
+          },
+          "title": "Movies — downloading"
+        },
+        {
+          "kind": "sonarr.queue",
+          "plugin": "sonarr",
+          "layout": {
+            "desktop": [
+              8,
+              9,
+              8,
+              10
+            ]
+          },
+          "title": "Series — downloading"
+        },
+        {
+          "kind": "qbittorrent.torrents",
+          "plugin": "qbittorrent",
+          "layout": {
+            "desktop": [
+              16,
+              9,
+              8,
+              10
+            ]
+          },
+          "title": "Torrents"
+        },
+        {
+          "kind": "core.calendar",
+          "layout": {
+            "desktop": [
+              0,
+              19,
+              8,
+              10
+            ]
+          },
+          "title": "Release calendar"
+        },
+        {
+          "kind": "radarr.calendar",
+          "plugin": "radarr",
+          "layout": {
+            "desktop": [
+              8,
+              19,
+              8,
+              10
+            ]
+          },
+          "title": "Upcoming movies"
+        },
+        {
+          "kind": "sonarr.calendar",
+          "plugin": "sonarr",
+          "layout": {
+            "desktop": [
+              16,
+              19,
+              8,
+              10
+            ]
+          },
+          "title": "Upcoming episodes"
+        },
+        {
+          "kind": "radarr.overview",
+          "plugin": "radarr",
+          "layout": {
+            "desktop": [
+              0,
+              29,
+              5,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "sonarr.overview",
+          "plugin": "sonarr",
+          "layout": {
+            "desktop": [
+              5,
+              29,
+              5,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "bazarr.subtitles",
+          "plugin": "bazarr",
+          "layout": {
+            "desktop": [
+              10,
+              29,
+              7,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "prowlarr.indexers",
+          "plugin": "prowlarr",
+          "layout": {
+            "desktop": [
+              17,
+              29,
+              7,
+              8
+            ]
+          }
+        },
+        {
+          "kind": "immich.library",
+          "plugin": "immich",
+          "layout": {
+            "desktop": [
+              0,
+              37,
+              10,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "mediarr.library",
+          "plugin": "mediarr",
+          "layout": {
+            "desktop": [
+              10,
+              37,
+              6,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "qbittorrent.transfer",
+          "plugin": "qbittorrent",
+          "layout": {
+            "desktop": [
+              16,
+              37,
+              8,
+              9
+            ]
+          },
+          "title": "Transfer speed"
+        }
+      ]
+    },
+    {
+      "name": "Infrastructure",
+      "icon": "server",
+      "widgets": [
+        {
+          "kind": "proxmox.summary",
+          "plugin": "proxmox",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              8,
+              8
+            ]
+          },
+          "title": "Proxmox host"
+        },
+        {
+          "kind": "proxmox.storage",
+          "plugin": "proxmox",
+          "layout": {
+            "desktop": [
+              8,
+              0,
+              8,
+              8
+            ]
+          },
+          "title": "Storage"
+        },
+        {
+          "kind": "core.chart",
+          "plugin": "proxmox",
+          "layout": {
+            "desktop": [
+              16,
+              0,
+              8,
+              8
+            ]
+          },
+          "title": "CPU / RAM — 24 h",
+          "options": {
+            "metrics": [
+              "cpu",
+              "mem"
+            ],
+            "range": 24
+          }
+        },
+        {
+          "kind": "proxmox.guests",
+          "plugin": "proxmox",
+          "layout": {
+            "desktop": [
+              0,
+              8,
+              24,
+              14
+            ]
+          },
+          "title": "Containers & virtual machines"
+        },
+        {
+          "kind": "docker.containers",
+          "plugin": "docker",
+          "layout": {
+            "desktop": [
+              0,
+              22,
+              8,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "prometheus.values",
+          "plugin": "prometheus",
+          "layout": {
+            "desktop": [
+              8,
+              22,
+              5,
+              9
+            ]
+          },
+          "title": "Sensors"
+        },
+        {
+          "kind": "http-json.values",
+          "plugin": "http-json",
+          "layout": {
+            "desktop": [
+              13,
+              22,
+              5,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "vaultwarden.status",
+          "plugin": "vaultwarden",
+          "layout": {
+            "desktop": [
+              18,
+              22,
+              6,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "core.checks",
+          "layout": {
+            "desktop": [
+              0,
+              31,
+              14,
+              10
+            ]
+          },
+          "title": "Uptime checks"
+        },
+        {
+          "kind": "core.incidents",
+          "layout": {
+            "desktop": [
+              14,
+              31,
+              10,
+              10
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Network",
+      "icon": "network",
+      "widgets": [
+        {
+          "kind": "mikrotik.traffic",
+          "plugin": "mikrotik",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              11,
+              9
+            ]
+          },
+          "title": "WAN traffic"
+        },
+        {
+          "kind": "mikrotik.interfaces",
+          "plugin": "mikrotik",
+          "layout": {
+            "desktop": [
+              11,
+              0,
+              6,
+              9
+            ]
+          },
+          "title": "Interfaces"
+        },
+        {
+          "kind": "pangolin.sites",
+          "plugin": "pangolin",
+          "layout": {
+            "desktop": [
+              17,
+              0,
+              7,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "adguard.stats",
+          "plugin": "adguard",
+          "layout": {
+            "desktop": [
+              0,
+              9,
+              8,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "adguard.top",
+          "plugin": "adguard",
+          "layout": {
+            "desktop": [
+              8,
+              9,
+              16,
+              9
+            ]
+          },
+          "title": "DNS — top lists"
+        },
+        {
+          "kind": "mikrotik.clients",
+          "plugin": "mikrotik",
+          "layout": {
+            "desktop": [
+              0,
+              18,
+              12,
+              10
+            ]
+          },
+          "title": "VPN peers & DHCP leases"
+        },
+        {
+          "kind": "core.checks",
+          "layout": {
+            "desktop": [
+              12,
+              18,
+              12,
+              10
+            ]
+          },
+          "title": "Network checks",
+          "options": {
+            "types": [
+              "ping",
+              "tcp",
+              "dns"
+            ]
+          }
+        },
+        {
+          "kind": "core.chart",
+          "plugin": "mikrotik",
+          "layout": {
+            "desktop": [
+              0,
+              28,
+              12,
+              8
+            ]
+          },
+          "title": "WAN — 24 h",
+          "options": {
+            "metrics": [
+              "wan_rx",
+              "wan_tx"
+            ],
+            "range": 24
+          }
+        },
+        {
+          "kind": "core.chart",
+          "plugin": "adguard",
+          "layout": {
+            "desktop": [
+              12,
+              28,
+              12,
+              8
+            ]
+          },
+          "title": "Blocked share — 7 days",
+          "options": {
+            "metrics": [
+              "blocked_pct"
+            ],
+            "range": 168
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hosting",
+      "icon": "globe",
+      "widgets": [
+        {
+          "kind": "whm.server",
+          "plugin": "whm",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              11,
+              10
+            ]
+          },
+          "title": "WHM server"
+        },
+        {
+          "kind": "cpanel.accounts",
+          "plugin": "cpanel",
+          "layout": {
+            "desktop": [
+              11,
+              0,
+              13,
+              10
+            ]
+          },
+          "title": "cPanel accounts"
+        },
+        {
+          "kind": "core.checks",
+          "layout": {
+            "desktop": [
+              0,
+              10,
+              10,
+              8
+            ]
+          },
+          "title": "Websites & certificates",
+          "options": {
+            "types": [
+              "http",
+              "ssl"
+            ]
+          }
+        },
+        {
+          "kind": "core.chart",
+          "plugin": "whm",
+          "layout": {
+            "desktop": [
+              10,
+              10,
+              8,
+              8
+            ]
+          },
+          "title": "Server load — 24 h",
+          "options": {
+            "metrics": [
+              "load1",
+              "load5"
+            ],
+            "range": 24
+          }
+        },
+        {
+          "kind": "vaultwarden.status",
+          "plugin": "vaultwarden",
+          "layout": {
+            "desktop": [
+              18,
+              10,
+              6,
+              8
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wall",
+      "icon": "tv",
+      "widgets": [
+        {
+          "kind": "core.clock",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              7,
+              7
+            ]
+          },
+          "options": {
+            "seconds": false
+          }
+        },
+        {
+          "kind": "core.summary",
+          "layout": {
+            "desktop": [
+              7,
+              0,
+              10,
+              7
+            ]
+          },
+          "title": "At a glance"
+        },
+        {
+          "kind": "core.weather",
+          "layout": {
+            "desktop": [
+              17,
+              0,
+              7,
+              7
+            ]
+          }
+        },
+        {
+          "kind": "core.statuswall",
+          "layout": {
+            "desktop": [
+              0,
+              7,
+              24,
+              10
+            ]
+          },
+          "title": "All services"
+        },
+        {
+          "kind": "core.incidents",
+          "layout": {
+            "desktop": [
+              0,
+              17,
+              10,
+              9
+            ]
+          }
+        },
+        {
+          "kind": "core.checks",
+          "layout": {
+            "desktop": [
+              10,
+              17,
+              14,
+              9
+            ]
+          },
+          "title": "Uptime"
+        }
+      ]
+    },
+    {
+      "name": "Tools",
+      "icon": "box",
+      "inRotation": false,
+      "widgets": [
+        {
+          "kind": "core.bookmarks",
+          "layout": {
+            "desktop": [
+              0,
+              0,
+              8,
+              7
+            ]
+          },
+          "title": "Quick links",
+          "options": {
+            "links": [
+              {
+                "name": "Proxmox",
+                "url": "https://192.168.1.10:8006",
+                "icon": "proxmox"
+              },
+              {
+                "name": "AdGuard Home",
+                "url": "http://192.168.1.2",
+                "icon": "adguard-home"
+              },
+              {
+                "name": "Radarr",
+                "url": "http://192.168.1.20:7878",
+                "icon": "radarr"
+              },
+              {
+                "name": "Sonarr",
+                "url": "http://192.168.1.20:8989",
+                "icon": "sonarr"
+              },
+              {
+                "name": "qBittorrent",
+                "url": "http://192.168.1.20:8080",
+                "icon": "qbittorrent"
+              },
+              {
+                "name": "Cloudflare",
+                "url": "https://one.dash.cloudflare.com",
+                "icon": "cloudflare"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "core.notes",
+          "layout": {
+            "desktop": [
+              8,
+              0,
+              8,
+              7
+            ]
+          },
+          "options": {
+            "text": "## Notes\n- Replace the links on the left with your own addresses\n- Every widget here can be moved, resized or removed in **Edit** mode\n- Services created by the template run in **mock mode** until you enter their real URL and key in Settings → Services"
+          }
+        },
+        {
+          "kind": "core.chart",
+          "plugin": "qbittorrent",
+          "layout": {
+            "desktop": [
+              16,
+              0,
+              8,
+              7
+            ]
+          },
+          "title": "Download speed — 6 h",
+          "options": {
+            "metrics": [
+              "dl",
+              "up"
+            ],
+            "range": 6
+          }
+        },
+        {
+          "kind": "core.iframe",
+          "layout": {
+            "desktop": [
+              0,
+              7,
+              24,
+              12
+            ]
+          },
+          "title": "Embedded page (set a URL in the widget settings)"
+        }
+      ]
+    }
+  ]
+}

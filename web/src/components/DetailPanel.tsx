@@ -8,14 +8,11 @@ import type { CheckState, Field } from '../lib/types';
 import { AreaChart, UptimeBar } from './charts';
 import { Badge, Button, Drawer, Segmented, ServiceIcon, StatusDot, statusLabel, cx } from './ui';
 import { FieldInput } from './FieldInput';
+import { metricFormat, metricLabel } from '../lib/metrics';
 
 const RANGES = [
   { value: '1', label: '1 h' }, { value: '6', label: '6 h' }, { value: '24', label: '24 h' }, { value: '168', label: '7 d' }, { value: '720', label: '30 d' },
 ] as const;
-const PRETTY: Record<string, string> = {
-  _latency: 'Response (ms)', _up: 'Availability', cpu: 'CPU %', mem: 'RAM %', load1: 'Load', temp: 'Temperature', queue: 'Queue', missing: 'Missing',
-  dl: 'Download B/s', up: 'Upload B/s', wan_rx: 'WAN ↓ bps', wan_tx: 'WAN ↑ bps', queries: 'DNS queries', blocked_pct: 'Blocked %', streams: 'Streams', pending: 'Pending', guests_running: 'Running guests', library: 'Library', indexers_ok: 'Indexers OK', photos: 'Photos', response_ms: 'Response (ms)', free: 'Free', downloading: 'Downloading', seeding: 'Seeding',
-};
 const COLORS = ['var(--accent)', '#22c55e', '#f59e0b', '#38bdf8', '#ec4899'];
 
 function MetricCharts({ instanceId, metrics, hours }: { instanceId: string; metrics: string[]; hours: number }) {
@@ -25,9 +22,9 @@ function MetricCharts({ instanceId, metrics, hours }: { instanceId: string; metr
     <div className="grid gap-4 md:grid-cols-2">
       {metrics.map((m, i) => (
         <div key={m} className="rounded-2xl border border-line bg-panel-2 p-3">
-          <div className="mb-2 text-xs font-medium text-muted">{PRETTY[m] ?? m}</div>
-          <AreaChart height={120} series={[{ key: m, label: PRETTY[m] ?? m, color: COLORS[i % COLORS.length], data: data[series[i]] ?? [] }]}
-            yFormat={(v) => (Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(v < 10 ? 1 : 0))} />
+          <div className="mb-2 text-xs font-medium text-muted">{metricLabel(m)}</div>
+          <AreaChart height={120} series={[{ key: m, label: metricLabel(m), color: COLORS[i % COLORS.length], data: data[series[i]] ?? [] }]}
+            yFormat={metricFormat(m)} />
         </div>
       ))}
     </div>

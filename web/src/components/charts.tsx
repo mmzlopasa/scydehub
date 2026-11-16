@@ -93,7 +93,7 @@ export function AreaChart({ series, height = 180, min: fixedMin, max: fixedMax, 
         {hover !== null && <line x1={hover * w} x2={hover * w} y1="0" y2={height} stroke="var(--muted)" strokeOpacity=".5" vectorEffect="non-scaling-stroke" />}
       </svg>
       <div className="pointer-events-none absolute left-1 top-0 flex h-full flex-col justify-between py-0.5 text-[10px] text-muted num">
-        <span>{yFormat(hi)}</span><span>{yFormat(lo)}</span>
+        <span className="w-fit rounded bg-[var(--bg)]/55 px-1">{yFormat(hi)}</span><span className="w-fit rounded bg-[var(--bg)]/55 px-1">{yFormat(lo)}</span>
       </div>
       {hover !== null && hx !== null && (
         <div className="glass pointer-events-none absolute top-2 z-10 rounded-xl px-3 py-2 text-xs" style={{ left: `clamp(8px, calc(${hover * 100}% + 12px), calc(100% - 180px))` }}>
