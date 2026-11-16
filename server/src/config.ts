@@ -30,7 +30,12 @@ export const config = {
   adminUser: process.env.SCYDE_ADMIN_USER ?? 'admin',
   adminPassword: process.env.SCYDE_ADMIN_PASSWORD,
   /** Set to true when served over HTTPS (behind nginx+certbot) so cookies get the Secure flag. */
-  secureCookies: process.env.SCYDE_SECURE_COOKIES === '1' || process.env.SCYDE_SECURE_COOKIES === 'true',
+  /**
+   * Cookies get the Secure flag automatically when the request arrived over HTTPS (directly or via
+   * X-Forwarded-Proto from nginx / Cloudflare Tunnel). Set SCYDE_SECURE_COOKIES=force to always set it.
+   * (Forcing it breaks logins over plain http://<ip>:8484 — browsers drop Secure cookies on HTTP.)
+   */
+  secureCookies: process.env.SCYDE_SECURE_COOKIES === 'force',
   trustProxy: process.env.SCYDE_TRUST_PROXY ?? 'loopback,uniquelocal',
   webDir: process.env.SCYDE_WEB_DIR ?? resolve(process.cwd(), '../web/dist'),
   version: process.env.SCYDE_VERSION ?? '0.1.0',

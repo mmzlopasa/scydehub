@@ -50,7 +50,7 @@ Ne trebaju ti nginx, certbot ni otvoreni portovi na routeru.
 
 1. U Cloudflare Zero Trust → *Networks → Tunnels* napravi tunel tipa *Cloudflared* i kopiraj token iz naredbe za Docker.
 2. U tunelu dodaj *Public hostname*: npr. `hub.tvojadomena.com`, servis `HTTP`, URL `hub:8484`.
-3. U `.env` postavi `TUNNEL_TOKEN=<token>` i `SCYDE_SECURE_COOKIES=1`.
+3. U `.env` postavi `TUNNEL_TOKEN=<token>`.
 4. Pokreni:
 
 ```bash
@@ -65,7 +65,6 @@ WebSocket radi kroz tunel bez dodatnih postavki. Hub je tada dostupan s internet
    - `DOMAIN`
    - `CERTBOT_EMAIL`
    - `HUB_BIND=127.0.0.1`
-   - `SCYDE_SECURE_COOKIES=1`
    - `ALLOW_CIDRS` (LAN i VPN mreže koje smiju pristupiti)
 2. DNS A zapis za domenu mora pokazivati na host, a portovi 80 i 443 moraju biti otvoreni.
 3. Pokreni:
