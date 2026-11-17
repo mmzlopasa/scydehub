@@ -10,11 +10,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
+# one run at a time, and a run that has started publishing is never cut off half-way
 concurrency:
-  group: apps-${{ github.ref }}
-  cancel-in-progress: true
+  group: apps-release
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -38,7 +39,7 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
       # Optional stable signing: add secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
-      # Without them the APK is signed with a CI debug key (installs fine, but an update needs an uninstall when the key changes).
+      # Without them the APK is signed with the fixed key in android/ci-release.keystore, so updates install over older builds.
       - name: Decode keystore
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -93,6 +94,8 @@ jobs:
   release:
     needs: [version, apk, ipa]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }

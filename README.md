@@ -116,8 +116,8 @@ Every client needs only the **Hub URL** and a **kiosk token** (*Settings → Kio
 | Client | Where to get it | Notes |
 | --- | --- | --- |
 | Monitor / mini PC | `https://hub/kiosk#token=…` | `chromium --kiosk --noerrdialogs "https://hub/kiosk#token=…"` |
-| Android TV | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub-tv.apk` | Left/right switches boards, OK pauses rotation, BACK twice or MENU opens setup. The token is stored encrypted with the Android Keystore. |
-| iPad / iPhone | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub.ipa` | Sign and install with Feather. Turn on *Guided Access*. Five quick taps on the kiosk clock return to setup. |
+| Android TV | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub-tv.apk` | Left/right switches boards, OK pauses rotation, BACK twice or MENU opens setup. The token is stored encrypted with the Android Keystore. Builds are signed with the same key every time, so a newer APK installs over an older one (coming from 0.2.x: uninstall once). |
+| iPad / iPhone | [Releases](https://github.com/mmzlopasa/scydehub/releases/latest) → `scydehub.ipa` | Sign and install with Feather. Turn on *Guided Access*. Five quick taps in the top-left corner return to setup. Prefer an `https://` Hub address: iOS may refuse to show a plain `http://` Hub inside the app. |
 
 Both apps are built and published on the Releases page automatically whenever they or the version in `package.json` change on `main`.
 
@@ -262,13 +262,14 @@ deploy/            nginx template, certbot script, external heartbeat
 
 | Area | How | Result |
 | --- | --- | --- |
-| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation, path confinement, board templates | 12/12 pass |
+| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation (types, ranges, enums), path confinement, board templates, per-service TLS against a real self-signed server, PromQL field parsing, JSON expectations, redirect handling in checks | 16/16 pass |
 | Types | `tsc` for server and web | clean |
 | Security, live | 22 requests against a running server: CSRF header, password re-confirmation, refusing to send a stored key to a new URL, kiosk role limits, token not accepted from the URL, input validation, lockout after failed sign-ins | all behave as designed |
 | WebSocket | Cross-site origin refused, kiosk token through the sub-protocol, connection closed on token revoke and on sign-out | all behave as designed |
 | UI | Chromium at 1600×1000, iPhone 13 and TV kiosk: sign-in, boards, edit mode, Customize, light theme, security page | no JavaScript errors |
 | Templates | The built-in template imported through the UI into an empty Hub; a test checks that it contains every widget, that nothing overlaps and that everything fits the grid | 7 boards, 62 widgets, no errors |
 | Free placement | A widget dragged into empty space stays there and survives a reload | works |
+| End to end | 28 steps through the real UI against a fake Proxmox host with a self-signed certificate: template import, connecting a service, a power action, a check, a notification, kiosk token and revocation, backup and restore, 2FA and recovery codes | 28/28 pass |
 | Android | `./gradlew assembleRelease` | builds |
 | Docker | The runtime image started through the hardened `docker-compose.yml`: the `init` step fixed the ownership of `./data`, the Hub ran as uid 1000 with no capabilities, a read-only filesystem and no tunnel token in its environment | healthy, sign-in works |
 

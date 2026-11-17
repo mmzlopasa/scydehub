@@ -24,6 +24,7 @@ export function Security() {
   const [code, setCode] = useState('');
   const [pw, setPw] = useState('');
   const [offCode, setOffCode] = useState('');
+  const [regenCode, setRegenCode] = useState('');
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const loadSessions = () => get<Session[]>('/api/auth/sessions').then(setSessions).catch(() => {});
@@ -56,7 +57,10 @@ export function Security() {
         )}
         {totp && (
           <div className="space-y-4">
-            <Button icon={<RefreshCw className="size-4" />} onClick={async () => { if (await confirmDialog({ title: 'Generate new recovery codes?', body: 'The old codes stop working.', confirmLabel: 'Generate' })) post('/api/auth/totp/recovery-codes').then((r) => setRecovery(r.recoveryCodes)).catch(fail); }}>New recovery codes</Button>
+            <div className="flex flex-wrap gap-2">
+              <Input className="max-w-[200px] font-mono" placeholder="Current 2FA code" inputMode="numeric" autoComplete="one-time-code" value={regenCode} onChange={(e) => setRegenCode(e.target.value)} />
+              <Button icon={<RefreshCw className="size-4" />} disabled={!regenCode.trim()} onClick={async () => { if (await confirmDialog({ title: 'Generate new recovery codes?', body: 'The old codes stop working.', confirmLabel: 'Generate' })) post('/api/auth/totp/recovery-codes', { code: regenCode.trim() }).then((r) => { setRecovery(r.recoveryCodes); setRegenCode(''); }).catch(fail); }}>New recovery codes</Button>
+            </div>
             <div className="rounded-2xl border border-line p-4">
               <div className="mb-2 text-sm font-medium">Turn off 2FA</div>
               <div className="flex flex-wrap gap-2">

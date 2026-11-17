@@ -12,12 +12,13 @@ const REQ_STATUS: Record<number, string> = { 1: 'Pending', 2: 'Approved', 3: 'De
 
 async function titleFor(ctx: PluginContext<Cfg>, type: string, tmdbId: number) {
   const cache: Record<string, any> = (ctx.scratch.titles ??= {});
+  if (tmdbId == null) return { title: 'Unknown title', year: '', poster: null };
   const k = `${type}:${tmdbId}`;
   if (!cache[k]) {
     const r = await ctx.http.get<any>(`/api/v1/${type === 'movie' ? 'movie' : 'tv'}/${tmdbId}`).catch(() => null);
-    cache[k] = r
-      ? { title: r.title ?? r.name ?? `#${tmdbId}`, year: String(r.releaseDate ?? r.firstAirDate ?? '').slice(0, 4), poster: r.posterPath ? `https://image.tmdb.org/t/p/w154${r.posterPath}` : null }
-      : { title: `TMDB ${tmdbId}`, year: '', poster: null };
+    // a failed lookup is not remembered: the next poll tries again
+    if (!r || typeof r !== 'object') return { title: `TMDB ${tmdbId}`, year: '', poster: null };
+    cache[k] = { title: r.title ?? r.name ?? `#${tmdbId}`, year: String(r.releaseDate ?? r.firstAirDate ?? '').slice(0, 4), poster: r.posterPath ? `https://image.tmdb.org/t/p/w154${r.posterPath}` : null };
   }
   return cache[k];
 }
@@ -46,6 +47,7 @@ export const seerr: Plugin<Cfg, SeerrData> = {
       http.get<any>('/api/v1/request', { query: { take: 20, skip: 0, filter: 'pending', sort: 'added' } }),
       http.get<any>('/api/v1/request', { query: { take: 10, skip: 0, filter: 'all', sort: 'added' } }),
     ]);
+    if (!counts || typeof counts !== 'object' || !Array.isArray(pending?.results)) throw new Error('Unexpected answer from Seerr — check the URL and API key');
     const p = await Promise.all((pending.results ?? []).map((r: any) => mapReq(ctx, r)));
     const rc = await Promise.all((recent.results ?? []).map((r: any) => mapReq(ctx, r)));
     return {

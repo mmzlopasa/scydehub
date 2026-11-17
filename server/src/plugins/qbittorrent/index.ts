@@ -15,10 +15,17 @@ const STOP = new Set(['stoppedUP', 'stoppedDL', 'pausedUP', 'pausedDL']);
 async function login(ctx: PluginContext<Cfg>) {
   const { http, config: c, scratch } = ctx;
   if (c.apiKey) return; // 5.2+ API key: sent as header, no session
+  // a wrong password retried on every poll gets this address banned by qBittorrent within seconds: back off instead
+  if (scratch.loginBlockedUntil > Date.now()) throw new Error(`${scratch.loginError} — next attempt ${new Date(scratch.loginBlockedUntil).toISOString().slice(11, 16)} UTC (save the service to retry now)`);
   const origin = new URL(http.baseUrl).origin;
+  const fail = (msg: string, minutes: number): never => {
+    scratch.loginError = msg;
+    scratch.loginBlockedUntil = Date.now() + minutes * 60_000;
+    throw new Error(msg);
+  };
   const r = await http.raw('/api/v2/auth/login', { method: 'POST', form: { username: c.username ?? '', password: c.password ?? '' }, headers: { Referer: origin, Origin: origin } });
-  if (r.status === 403) throw new Error('qBittorrent banned this IP (too many failed logins)');
-  if (r.status >= 400 || /Fails/i.test(r.text)) throw new Error('qBittorrent login failed');
+  if (r.status === 403) fail('qBittorrent banned this address after too many failed logins', 30);
+  if (r.status >= 400 || /Fails/i.test(r.text)) fail('qBittorrent login failed: wrong username or password', 10);
   // cookie name is SID (<5.2) or QBT_SID_<port> (5.2+) — keep whatever we got
   const cookies = (r.headers as any).getSetCookie?.() as string[] | undefined;
   const list = cookies?.length ? cookies : [r.headers.get('set-cookie') ?? ''];
@@ -85,10 +92,11 @@ export const qbittorrent: Plugin<Cfg, QbtData> = {
       ctx.tick % 6 === 1 || ctx.scratch.free === undefined ? api<any>(ctx, '/api/v2/sync/maindata', { query: { rid: '0' } }).catch(() => null) : Promise.resolve(null),
       ctx.scratch.version ? Promise.resolve(ctx.scratch.version) : api<string>(ctx, '/api/v2/app/version', { text: true }),
     ]);
+    if (!Array.isArray(torrents) || !info || typeof info !== 'object') throw new Error('Unexpected answer from qBittorrent — check the URL');
     ctx.scratch.version = version;
     if (main?.server_state) ctx.scratch.free = main.server_state.free_space_on_disk;
     const map = (t: any): QbtTorrent => ({ hash: t.hash, name: t.name, progress: Math.round(t.progress * 1000) / 10, dlspeed: t.dlspeed, upspeed: t.upspeed, eta: t.eta, state: t.state, size: t.size, ratio: Math.round(t.ratio * 100) / 100, category: t.category });
-    const active = torrents.filter((t) => DL.has(t.state) || t.dlspeed > 0 || t.upspeed > 0).sort((a, b) => b.dlspeed - a.dlspeed || a.progress - b.progress).slice(0, 25).map(map);
+    const active = torrents.filter((t) => DL.has(t.state) || t.dlspeed > 0 || t.upspeed > 0 || (STOP.has(t.state) && t.progress < 1) || t.state === 'error' || t.state === 'missingFiles').sort((a, b) => b.dlspeed - a.dlspeed || a.progress - b.progress).slice(0, 25).map(map);
     return finish({
       version: String(version).trim(), dlSpeed: info.dl_info_speed, upSpeed: info.up_info_speed, dlTotal: info.dl_info_data, upTotal: info.up_info_data,
       freeSpace: ctx.scratch.free, connection: info.connection_status, legacy: isLegacy,

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Loader2, Upload, Trash2 } from 'lucide-react';
 import type { Status } from '../lib/types';
 import { locale } from '../lib/format';
+import { kioskToken } from '../lib/api';
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
 
@@ -106,11 +107,11 @@ export function AnimatedNumber({ value, format = (n) => Math.round(n).toLocaleSt
     if (value == null || !Number.isFinite(value)) return;
     const a = from.current, b = value;
     if (a === b) { setShown(b); return; }
-    if (document.documentElement.dataset.motion === 'off') { from.current = b; setShown(b); return; }
+    if (document.documentElement.dataset.motion !== 'full') { from.current = b; setShown(b); return; }
     const start = performance.now();
     cancelAnimationFrame(raf.current);
     const step = (t: number) => {
-      const p = Math.min(1, (t - start) / duration);
+      const p = Math.min(1, Math.max(0, (t - start) / duration)); // the frame timestamp can predate `start`
       const e = 1 - Math.pow(1 - p, 3);
       const v = a + (b - a) * e;
       setShown(v);
@@ -139,10 +140,31 @@ export function WidgetSkeleton() {
 // ---------- Service icon ----------
 /** `slug` may be a dashboard-icons name (cached by the Hub), an https URL or an uploaded data: image. Falls back to a monogram. */
 const failed = new Set<string>();
+/** Kiosk devices authenticate with a header, which <img> cannot send: fetch those icons and show them as blob URLs. */
+const blobs = new Map<string, Promise<string>>();
+const kioskIcon = (slug: string, tok: string) => {
+  let p = blobs.get(slug);
+  if (!p) {
+    p = fetch(`/api/icons/${encodeURIComponent(slug)}`, { headers: { authorization: `Kiosk ${tok}` } })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('no icon')))).then((b) => URL.createObjectURL(b));
+    blobs.set(slug, p);
+  }
+  return p;
+};
 export function ServiceIcon({ slug, name, size = 22, className, color }: { slug?: string; name?: string; size?: number; className?: string; color?: string }) {
   const [err, setErr] = useState(!slug || failed.has(slug));
-  useEffect(() => setErr(!slug || failed.has(slug)), [slug]);
-  if (err || !slug) {
+  const direct = !!slug && /^(https:|data:image\/)/.test(slug);
+  const tok = direct ? null : kioskToken.get();
+  const [blob, setBlob] = useState('');
+  useEffect(() => {
+    setErr(!slug || failed.has(slug));
+    setBlob('');
+    if (!slug || !tok || failed.has(slug)) return;
+    let live = true;
+    kioskIcon(slug, tok).then((u) => { if (live) setBlob(u); }).catch(() => { failed.add(slug); if (live) setErr(true); });
+    return () => { live = false; };
+  }, [slug, tok]);
+  if (err || !slug || (tok && !blob)) {
     const letters = (name ?? slug ?? '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
     return (
       <span className={cx('inline-grid shrink-0 place-items-center rounded-[30%] font-semibold', className)}
@@ -151,7 +173,7 @@ export function ServiceIcon({ slug, name, size = 22, className, color }: { slug?
       </span>
     );
   }
-  const src = /^(https:|data:image\/)/.test(slug) ? slug : `/api/icons/${encodeURIComponent(slug)}`;
+  const src = direct ? slug : tok ? blob : `/api/icons/${encodeURIComponent(slug)}`;
   return (
     <img src={src} alt="" width={size} height={size} loading="lazy" referrerPolicy="no-referrer" className={cx('shrink-0 object-contain', className)} style={{ width: size, height: size }}
       onError={() => { failed.add(slug); setErr(true); }} />
@@ -159,13 +181,23 @@ export function ServiceIcon({ slug, name, size = 22, className, color }: { slug?
 }
 
 // ---------- Modal / Drawer ----------
-function useEscape(open: boolean, onClose: () => void) {
+/** Open layers, bottom to top. Escape closes only the top one and goes no further (not to the page, not to the layer below). */
+const layers: { current: () => void }[] = [];
+if (typeof window !== 'undefined')
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !layers.length) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    layers[layers.length - 1].current();
+  }, true);
+export function useEscape(open: boolean, onClose: () => void) {
+  const ref = useRef(onClose);
+  ref.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
-    window.addEventListener('keydown', k, true);
-    return () => window.removeEventListener('keydown', k, true);
-  }, [open, onClose]);
+    layers.push(ref);
+    return () => { const i = layers.indexOf(ref); if (i >= 0) layers.splice(i, 1); };
+  }, [open]);
 }
 export function Modal({ open, onClose, title, children, wide, footer }: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; wide?: boolean; footer?: ReactNode }) {
   useEscape(open, onClose);
@@ -248,6 +280,15 @@ export function Slider({ value, onChange, min, max, step = 1, suffix = '' }: { v
   );
 }
 export function ColorInput({ value, onChange, presets }: { value: string; onChange: (v: string) => void; presets?: string[] }) {
+  // what is being typed lives here; only a complete colour (or nothing) reaches the caller
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const type = (raw: string) => {
+    const v = raw.trim().replace(/^([0-9a-fA-F])/, '#$1');
+    if (!/^(#[0-9a-fA-F]{0,6})?$/.test(v)) return;
+    setDraft(v);
+    if (v === '' || v.length === 7) onChange(v);
+  };
   return (
     <div className="flex flex-wrap items-center gap-2">
       {presets?.map((c) => (
@@ -256,7 +297,7 @@ export function ColorInput({ value, onChange, presets }: { value: string; onChan
       <label className="relative grid size-8 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-2" style={{ background: value || 'transparent' }} title="Custom colour">
         <input type="color" value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#000000'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
       </label>
-      <Input value={value} onChange={(e) => /^#[0-9a-fA-F]{0,6}$/.test(e.target.value) && onChange(e.target.value)} onBlur={(e) => !/^#[0-9a-fA-F]{6}$/.test(e.target.value) && onChange(value)} className="!h-8 w-24 font-mono text-xs" />
+      <Input value={draft} placeholder="#RRGGBB" onChange={(e) => type(e.target.value)} onBlur={() => setDraft(value)} className="!h-8 w-24 font-mono text-xs" />
     </div>
   );
 }
@@ -264,6 +305,9 @@ export function ColorInput({ value, onChange, presets }: { value: string; onChan
 export function ImagePicker({ value, onChange, maxKb = 300, hint }: { value: string; onChange: (v: string) => void; maxKb?: number; hint?: string }) {
   const file = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState('');
+  const shown = value.startsWith('data:') ? '' : value;
+  const [draft, setDraft] = useState(shown);
+  useEffect(() => setDraft(shown), [shown]);
   const pick = (f: File) => {
     setErr('');
     if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(f.type)) return setErr('Use a PNG, JPG, WebP, GIF or SVG image');
@@ -278,8 +322,9 @@ export function ImagePicker({ value, onChange, maxKb = 300, hint }: { value: str
         {value ? <img src={value} alt="" className="size-10 rounded-xl border border-line-2 bg-panel-2 object-contain" /> : <div className="size-10 rounded-xl border border-dashed border-line-2" />}
         <Button size="sm" icon={<Upload className="size-3.5" />} onClick={() => file.current?.click()}>Upload</Button>
         {value && <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={() => onChange('')}>Remove</Button>}
-        <Input className="!h-8 min-w-40 flex-1 text-xs" placeholder="…or https:// image URL" value={value.startsWith('data:') ? '' : value}
-          onChange={(e) => (e.target.value === '' || /^https:\/\//.test(e.target.value)) && onChange(e.target.value)} />
+        <Input className="!h-8 min-w-40 flex-1 text-xs" placeholder="…or https:// image URL" value={draft}
+          onChange={(e) => { const v = e.target.value.trim(); setDraft(v); if (v === '' || /^https:\/\/[^\s"'<>]+$/.test(v)) { setErr(''); onChange(v); } }}
+          onBlur={() => { if (draft !== shown) { setErr(draft ? 'The address must start with https://' : ''); setDraft(shown); } }} />
         <input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) pick(f); e.target.value = ''; }} />
       </div>
       {(err || hint) && <div className={cx('text-xs', err ? 'text-bad' : 'text-muted')}>{err || hint}</div>}

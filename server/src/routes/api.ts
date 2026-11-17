@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetch } from 'undici';
 import { db, q, json, setSetting } from '../db.js';
+import { readCapped } from '../lib/http.js';
 import { audit, actorOf, rateLimit, requireAdmin, requireAny, requireSudo } from '../auth.js';
 import { bus } from '../lib/bus.js';
 import { randomId } from '../lib/crypto.js';
@@ -29,6 +30,7 @@ const optText = (v: unknown, max: number): string | null => (typeof v === 'strin
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback?: T): T =>
   allowed.includes(v as T) ? (v as T) : fallback !== undefined ? fallback : bad(`Value must be one of: ${allowed.join(', ')}`);
 const int = (v: unknown, min: number, max: number, fallback: number) => {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return fallback;
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
@@ -174,8 +176,8 @@ export default async function apiRoutes(app: FastifyInstance) {
       try {
         const r = await fetch(`${config.iconCdn}/${ext}/${slug}.${ext}`, { signal: AbortSignal.timeout(6000) });
         if (r.ok && Number(r.headers.get('content-length') ?? 0) < 1_000_000) {
-          const buf = Buffer.from(await r.arrayBuffer());
-          if (buf.length < 1_000_000) {
+          const buf = await readCapped(r, 1_000_000);
+          {
             writeFileSync(join(iconDir, `${slug}.${ext}`), buf);
             return reply.type(type).send(buf);
           }
@@ -221,9 +223,13 @@ export default async function apiRoutes(app: FastifyInstance) {
   });
   app.patch<{ Params: { id: string }; Body: AnyBody }>('/api/instances/:id', { preHandler: requireAdmin }, async (req, reply) => {
     const body = obj(req.body);
-    if (body.config !== undefined && (req.auth as any).sudoUntil < Date.now())
+    const before = getInstance(idOf(req.params.id));
+    if (!before) return reply.code(404).send({ error: 'not found' });
+    // leaving mock mode makes the Hub contact the configured address for real: same bar as changing the address
+    const goesLive = before.mock === 1 && body.mock !== undefined && !body.mock;
+    if ((body.config !== undefined || goesLive) && (req.auth as any).sudoUntil < Date.now())
       return reply.code(403).send({ error: 'Confirm your password to continue', sudo: true });
-    const row = updateInstance(idOf(req.params.id), body);
+    const row = updateInstance(before.id, body);
     if (!row) return reply.code(404).send({ error: 'not found' });
     reschedule(row.id);
     audit(req, 'instance.update', row.id, { name: row.name, fields: Object.keys(body) }, true);
@@ -233,7 +239,7 @@ export default async function apiRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/api/instances/:id', { preHandler: requireAdmin }, async (req) => {
     const id = idOf(req.params.id);
     q.run('DELETE FROM instances WHERE id = ?', id);
-    q.run("DELETE FROM metrics WHERE series LIKE ?", `inst:${id}:%`);
+    for (const t of ['metrics', 'metrics_5m', 'metrics_1h']) q.run(`DELETE FROM ${t} WHERE series LIKE ?`, `inst:${id}:%`);
     reschedule(id);
     audit(req, 'instance.delete', id, undefined, true);
     changed('instances');
@@ -269,7 +275,8 @@ export default async function apiRoutes(app: FastifyInstance) {
     '/api/instances/:id/actions/:action', { preHandler: requireAdmin }, async (req, reply) => {
       const row = getInstance(idOf(req.params.id));
       if (!row) return reply.code(404).send({ error: 'not found' });
-      const plugin = getPlugin(row.plugin)!;
+      const plugin = getPlugin(row.plugin);
+      if (!plugin) return reply.code(404).send({ error: 'Unknown integration' });
       const action = plugin.actions?.find((a) => a.id === req.params.action);
       if (!action) return reply.code(404).send({ error: 'Unknown action' });
       if (req.body?.confirm !== true) return reply.code(400).send({ error: 'The action must be confirmed' });
@@ -476,6 +483,12 @@ export default async function apiRoutes(app: FastifyInstance) {
   app.post<{ Body: AnyBody }>('/api/restore', { preHandler: requireSudo, bodyLimit: 30 * 1024 * 1024 }, async (req, reply) => {
     const b = obj(req.body);
     if (b.app !== 'scydehub' || !b.tables || typeof b.tables !== 'object') return reply.code(400).send({ error: 'This is not a SCYDE Hub backup' });
+    if (b.format !== 1 && b.format !== 2) return reply.code(400).send({ error: 'This backup was made by a newer version of SCYDE Hub' });
+    // a restore replaces everything, so a truncated or hand-cut file must not silently wipe what it leaves out
+    for (const t of BACKUP_TABLES) if (!Array.isArray(b.tables[t])) return reply.code(400).send({ error: `The backup is incomplete: "${t}" is missing` });
+    const parsed = (v: unknown, what: string) => { try { return JSON.parse(String(v)); } catch { return bad(`Invalid JSON in ${what}`); } };
+    const JSON_COLS: Record<string, string[]> = { settings: ['value'], instances: ['config'], widgets: ['options'], layouts: ['layout'], channels: ['config'] };
+    const ID_TABLES = new Set(['instances', 'checks', 'boards', 'widgets', 'alert_rules', 'channels']);
     // validate everything BEFORE touching the database: table names are fixed, column names must exist, values must be scalars
     const plan: { table: string; cols: string[]; rows: any[][] }[] = [];
     for (const t of BACKUP_TABLES) {
@@ -486,14 +499,37 @@ export default async function apiRoutes(app: FastifyInstance) {
         const o = obj(row);
         const cols = Object.keys(o).filter((c) => known.has(c));
         if (!cols.length) continue;
+        if (ID_TABLES.has(t) && !(typeof o.id === 'string' && ID.test(o.id))) bad(`Invalid id in ${t}`);
+        for (const c of JSON_COLS[t] ?? []) if (o[c] != null) parsed(o[c], `${t}.${c}`);
+        if (t === 'instances') {
+          if (!getPlugin(String(o.plugin))) bad(`Unknown integration "${String(o.plugin).slice(0, 40)}" in the backup`);
+          const cfg = parsed(o.config, 'instances.config');
+          if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg) || (cfg.url !== undefined && typeof cfg.url !== 'string')) bad('Invalid service configuration in the backup');
+        }
+        if (t === 'layouts') {
+          const items = parsed(o.layout, 'layouts.layout');
+          if (!Array.isArray(items)) bad('Invalid layout in the backup');
+          // format 1 was written for the old 12-column grid; today's grid has twice the resolution
+          if (b.format === 1) o.layout = JSON.stringify(items.map((it: any) => (it && typeof it === 'object' ? { ...it, x: it.x * 2, y: it.y * 2, w: it.w * 2, h: it.h * 2 } : it)));
+        }
         const vals = cols.map((c) => (o[c] === null || ['string', 'number'].includes(typeof o[c]) ? o[c] : bad(`Invalid value in ${t}.${c}`)));
         plan.push({ table: t, cols, rows: [vals] });
       }
     }
-    q.tx(() => {
-      for (const t of [...BACKUP_TABLES].reverse()) q.run(`DELETE FROM ${t}`);
-      for (const p of plan) q.run(`INSERT INTO ${p.table} (${p.cols.join(',')}) VALUES (${p.cols.map(() => '?').join(',')})`, ...p.rows[0]);
-    });
+    try {
+      q.tx(() => {
+        for (const t of [...BACKUP_TABLES].reverse()) q.run(`DELETE FROM ${t}`);
+        for (const p of plan) q.run(`INSERT INTO ${p.table} (${p.cols.join(',')}) VALUES (${p.cols.map(() => '?').join(',')})`, ...p.rows[0]);
+      });
+    } catch (e: any) {
+      // rolled back: nothing changed
+      bad(`The backup does not fit this database (${String(e?.message ?? e).slice(0, 120)}). Nothing was changed.`);
+    }
+    // history of services that no longer exist
+    const keep = new Set(listInstances().map((i) => i.id));
+    for (const t of ['metrics', 'metrics_5m', 'metrics_1h'])
+      for (const r of q.all<{ id: string }>(`SELECT DISTINCT substr(series, 6, 16) id FROM ${t} WHERE series LIKE 'inst:%'`))
+        if (!keep.has(r.id)) q.run(`DELETE FROM ${t} WHERE series LIKE ?`, `inst:${r.id}:%`);
     upgradeInstanceSecrets();
     upgradeChannelSecrets();
     audit(req, 'backup.restore', null, undefined, true);
@@ -512,8 +548,11 @@ export default async function apiRoutes(app: FastifyInstance) {
   });
   app.get<{ Params: { id: string } }>('/api/templates/:id', { preHandler: requireAdmin }, async (req, reply) =>
     BUILT_IN.find((t) => t.id === req.params.id) ?? reply.code(404).send({ error: 'not found' }));
-  app.post<{ Body: AnyBody }>('/api/templates/import', { preHandler: requireAdmin, bodyLimit: 4 * 1024 * 1024 }, async (req) => {
+  app.post<{ Body: AnyBody }>('/api/templates/import', { preHandler: requireAdmin, bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
     const b = obj(req.body);
+    // creating services is a sudo operation everywhere else, placeholders included
+    if (b.createMissing === true && (req.auth as any).sudoUntil < Date.now())
+      return reply.code(403).send({ error: 'Confirm your password to continue', sudo: true });
     const tpl = typeof b.id === 'string' ? BUILT_IN.find((t) => t.id === b.id) ?? bad('Unknown template') : parseTemplate(b.template);
     const r = importTemplate(parseTemplate(tpl), { createMissing: b.createMissing === true, replace: b.replace === true });
     for (const c of r.created) reschedule(c.id);

@@ -152,7 +152,21 @@ const blocked = (m: Map<string, Bucket>, k: string, limit: number) => {
 /** 5 failures per IP or 10 per account in 15 minutes. The per-account limit also holds when the
  *  attacker rotates IPs (or spoofs them behind a misconfigured proxy). */
 export function loginAllowed(ip: string, username = '') {
-  return !blocked(byIp, ip, 5) && !blocked(byUser, username.toLowerCase(), 10);
+  if (blocked(byIp, ip, 5)) return false;
+  if (!blocked(byUser, username.toLowerCase(), 10)) return true;
+  // The account-wide block stops guessing from rotating addresses, but it must not let a stranger lock the
+  // owner out: an address that already holds a live session of this account is only subject to its own limit.
+  return !!q.get(
+    'SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.ip = ? AND lower(u.username) = ? AND s.expires_at > ? LIMIT 1',
+    ip, username.toLowerCase(), Date.now(),
+  );
+}
+/** Password re-checks inside a session (sudo, change password, disable 2FA): 5 failures per address or session. */
+const bySession = new Map<string, Bucket>();
+export const confirmAllowed = (ip: string, sessionId: string) => !blocked(byIp, ip, 5) && !blocked(bySession, sessionId, 5);
+export function confirmFailed(ip: string, sessionId: string) {
+  hit(byIp, ip);
+  hit(bySession, sessionId);
 }
 export function loginFailed(ip: string, username = '') {
   hit(byIp, ip);

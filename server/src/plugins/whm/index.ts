@@ -6,7 +6,7 @@ export interface WhmData {
   load: { one: number; five: number; fifteen: number };
   services: { name: string; display: string; running: boolean | null; enabled: boolean }[];
   accounts: { total: number; suspended: number; list: { user: string; domain: string; suspended: boolean; diskUsed: string; diskLimit: string; plan?: string }[] };
-  backup: { enabled: boolean | null; lastDate?: string | null };
+  backup: { enabled: boolean | null; lastDate?: string | null; maxAgeDays?: number };
   version?: string;
 }
 
@@ -21,7 +21,8 @@ function finish(d: WhmData) {
   if (d.backup.enabled === false) alerts.push({ key: 'backup:disabled', severity: 'warning', message: 'WHM backup is disabled' });
   if (d.backup.lastDate) {
     const age = (Date.now() - new Date(d.backup.lastDate).getTime()) / 86400_000;
-    if (age > 2) alerts.push({ key: 'backup:age', severity: 'warning', message: `Last WHM backup is ${Math.floor(age)} d old` });
+    const limit = d.backup.maxAgeDays ?? 2; // 0 = never warn (weekly or monthly schedules set their own limit)
+    if (limit > 0 && age > limit) alerts.push({ key: 'backup:age', severity: 'warning', message: `Last WHM backup is ${Math.floor(age)} d old` });
   }
   return {
     status: alerts.some((a) => a.severity === 'critical') ? ('degraded' as const) : ('up' as const),
@@ -39,17 +40,23 @@ export const whm: Plugin<Cfg, WhmData> = {
   fields: [
     { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://server.example.com:2087' },
     { key: 'username', label: 'Username', type: 'string', default: 'root', required: true },
-    { key: 'token', label: 'API token', type: 'secret', required: true, help: 'Dedicated token with minimal ACLs (list-accts, status, backup)' },
+    { key: 'token', label: 'API token', type: 'secret', required: true, help: 'WHM → Manage API Tokens. Privileges: Basic System Information (load, services) and List Accounts. Backup status is only available to a root token; without it that part stays empty.' },
+    { key: 'backupMaxAgeDays', label: 'Warn when the last backup is older than (days)', type: 'number', default: 2, help: 'Use 8 for a weekly schedule; 0 turns the warning off' },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: `whm ${c.username}:${c.token}` } }),
-  async collect({ http, scratch, tick }) {
+  async collect({ http, scratch, tick, config: c }) {
     const v1 = { 'api.version': 1 };
+    // Each part needs its own privilege on the token. A token (or reseller) that lacks one still shows the rest;
+    // only when nothing at all is allowed is the service reported as failing, with WHM's own explanation.
+    const errors: string[] = [];
+    const part = <T>(p: Promise<T>) => p.catch((e: any) => { errors.push(String(e?.message ?? e)); return null; });
     const [load, svc, accts] = await Promise.all([
-      http.get('/json-api/systemloadavg', { query: v1 }).then((r) => unwrap<any>(r)),
-      http.get('/json-api/servicestatus', { query: v1 }).then((r) => unwrap<any>(r)),
-      http.get('/json-api/listaccts', { query: { ...v1, want: 'user,domain,suspended,diskused,disklimit,plan' } }).then((r) => unwrap<any>(r)),
+      part(http.get('/json-api/systemloadavg', { query: v1 }).then((r) => unwrap<any>(r))),
+      part(http.get('/json-api/servicestatus', { query: v1 }).then((r) => unwrap<any>(r))),
+      part(http.get('/json-api/listaccts', { query: { ...v1, want: 'user,domain,suspended,diskused,disklimit,plan' } }).then((r) => unwrap<any>(r))),
     ]);
+    if (errors.length === 3) throw new Error(`${errors[0]} — give the API token the privileges "Basic System Information" and "List Accounts" (WHM → Manage API Tokens)`);
     if (tick % 30 === 1 || !scratch.backup) {
       const cfg = await http.get('/json-api/backup_config_get', { query: v1 }).then((r) => unwrap<any>(r)).catch(() => null);
       const dates = await http.get('/json-api/backup_date_list', { query: v1 }).then((r) => unwrap<any>(r)).catch(() => null);
@@ -60,10 +67,10 @@ export const whm: Plugin<Cfg, WhmData> = {
     }
     const acct = (accts?.acct ?? []) as any[];
     return finish({
-      load: { one: Number(load.one), five: Number(load.five), fifteen: Number(load.fifteen) },
+      load: { one: Number(load?.one) || 0, five: Number(load?.five) || 0, fifteen: Number(load?.fifteen) || 0 },
       services: (svc?.service ?? []).filter((s: any) => s.installed !== 0).map((s: any) => ({ name: s.name, display: s.display_name ?? s.name, enabled: !!Number(s.enabled), running: s.running === undefined ? null : !!Number(s.running) })),
       accounts: { total: acct.length, suspended: acct.filter((a) => Number(a.suspended)).length, list: acct.map((a) => ({ user: a.user, domain: a.domain, suspended: !!Number(a.suspended), diskUsed: a.diskused, diskLimit: a.disklimit, plan: a.plan })) },
-      backup: scratch.backup, version: scratch.version,
+      backup: { ...scratch.backup, maxAgeDays: (c as any).backupMaxAgeDays === '' || (c as any).backupMaxAgeDays == null ? 2 : Math.max(0, Number((c as any).backupMaxAgeDays) || 0) }, version: scratch.version,
     });
   },
   mock(ctx) {

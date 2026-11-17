@@ -8,11 +8,14 @@ COPY web/package.json web/
 RUN npm ci --no-audit --no-fund
 COPY server server
 COPY web web
-RUN npm run build -w web && npm run build -w server && npm prune --omit=dev
+# after the build only the server's own runtime dependencies are kept (the web app is already compiled to static files)
+RUN npm run build -w web && npm run build -w server \
+ && npm ci --omit=dev --no-audit --no-fund -w server --include-workspace-root=false \
+ && mkdir -p server/node_modules
 
 # ---------- runtime ----------
 FROM node:22-alpine
-ARG VERSION=0.2.1
+ARG VERSION=0.3.0
 ARG BUILD_ID=dev
 # iputils: real ICMP ping (unprivileged via net.ipv4.ping_group_range), tini: proper signal handling
 RUN apk add --no-cache iputils tini ca-certificates tzdata
@@ -24,6 +27,7 @@ ENV NODE_ENV=production \
     SCYDE_BUILD_ID=$BUILD_ID
 WORKDIR /app/server
 COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/dist ./dist
 COPY --from=build /app/server/package.json ./package.json
 COPY --from=build /app/web/dist /app/web/dist

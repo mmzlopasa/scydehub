@@ -5,8 +5,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Optional release signing from env (GitHub Actions secrets). Without it the release APK is signed with the debug key so it still installs.
-val ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
+// Release signing: your own keystore from the environment (GitHub Actions secrets) when present. Otherwise the
+// keystore committed in this repository is used: its password is public, so it proves nothing about who built the
+// APK, but it is the SAME key on every build, which is what lets a newer APK install over an older one.
+val ownKs: String? = System.getenv("ANDROID_KEYSTORE_PATH")
+val ksPath: String = ownKs ?: rootProject.file("ci-release.keystore").path
 
 android {
     namespace = "com.scyde.hub"
@@ -21,13 +24,11 @@ android {
     }
 
     signingConfigs {
-        if (ksPath != null) {
-            create("release") {
-                storeFile = file(ksPath)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-            }
+        create("release") {
+            storeFile = file(ksPath)
+            storePassword = if (ownKs != null) System.getenv("ANDROID_KEYSTORE_PASSWORD") else "scydehub"
+            keyAlias = if (ownKs != null) System.getenv("ANDROID_KEY_ALIAS") else "scydehub"
+            keyPassword = if (ownKs != null) System.getenv("ANDROID_KEY_PASSWORD") else "scydehub"
         }
     }
 
@@ -35,7 +36,7 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = if (ksPath != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

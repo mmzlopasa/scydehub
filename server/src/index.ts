@@ -57,8 +57,15 @@ await app.register(websocket, {
 
 const HOST_OK = /^[A-Za-z0-9.\-:[\]]{1,255}$/;
 
+// The router percent-decodes paths ("/%61pi/…" reaches /api/…), so decide by the matched route, not the raw URL.
+const isApi = (req: { url: string; routeOptions?: { url?: string } }) =>
+  (req.routeOptions?.url ?? '').startsWith('/api/') || /^\/+api(\/|$)/i.test(decodeSafe(req.url));
+function decodeSafe(u: string) {
+  try { return decodeURIComponent(u.split('?')[0]); } catch { return '/api/'; }
+}
+
 app.addHook('onRequest', async (req, reply) => {
-  if (req.url.startsWith('/api/')) {
+  if (isApi(req)) {
     // coarse flood guard for everything under /api (per client IP)
     if (!rateLimit(`api:${req.ip}`, 1200, 60_000)) return reply.code(429).send({ error: 'Too many requests' });
     req.auth = resolveAuth(req);
@@ -68,7 +75,7 @@ app.addHook('onRequest', async (req, reply) => {
 // CSRF: every state-changing API call must carry a custom header. Browsers cannot add it cross-site
 // without a CORS preflight, and this server never answers one.
 app.addHook('preHandler', async (req, reply) => {
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.url.startsWith('/api/') && req.headers['x-scyde'] !== '1')
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && isApi(req) && req.headers['x-scyde'] !== '1')
     return reply.code(400).send({ error: 'missing x-scyde header' });
 });
 

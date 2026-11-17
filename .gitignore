@@ -10,6 +10,7 @@ android/build/
 android/app/build/
 android/local.properties
 android/*.keystore
+!android/ci-release.keystore
 # ios / capacitor
 ios/app/node_modules/
 ios/app/ios/App/Pods/

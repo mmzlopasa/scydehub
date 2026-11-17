@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { q } from '../db.js';
 import {
   audit, checkPassword, clearSetupCode, createSession, destroySession, grantSudo, loginAllowed, loginFailed, loginSucceeded,
-  needsSetup, rateLimit, requireAdmin, requireSudo, setupCode, setupCodeFailed, SUDO_TTL,
+  needsSetup, rateLimit, confirmAllowed, confirmFailed, requireAdmin, requireSudo, setupCode, setupCodeFailed, SUDO_TTL,
 } from '../auth.js';
 import { decrypt, encrypt, hashPassword, matchTotp, newRecoveryCode, newTotpSecret, normalizeRecoveryCode, randomToken, sha256 } from '../lib/crypto.js';
 import { config } from '../config.js';
@@ -87,7 +87,8 @@ export default async function authRoutes(app: FastifyInstance) {
     const password = str(req.body?.password, 300);
     const code = str(req.body?.code, 32);
     if (!loginAllowed(req.ip, username)) {
-      audit(req, 'auth.login', username, undefined, false, 'rate limited');
+      // one audit row per address per window: a locked-out client must not be able to fill the log
+      if (rateLimit(`lockaudit:${req.ip}`, 1, 15 * 60_000)) audit(req, 'auth.login', username, undefined, false, 'rate limited');
       return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
     }
     const u = q.get<{ id: number; password_hash: string; totp_enabled: number; totp_secret: string | null; totp_last_counter: number }>('SELECT * FROM users WHERE username = ?', username);
@@ -118,10 +119,10 @@ export default async function authRoutes(app: FastifyInstance) {
   /** Re-confirm the password for sensitive operations ("sudo mode", 10 minutes). */
   app.post<{ Body: { password: string } }>('/api/auth/sudo', { preHandler: requireAdmin }, async (req, reply) => {
     const a = req.auth as Extract<typeof req.auth, { kind: 'admin' }>;
-    if (!loginAllowed(req.ip, a.username)) return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
+    if (!confirmAllowed(req.ip, a.sessionId)) return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
     const u = q.get<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', a.userId);
     if (!checkPassword(str(req.body?.password, 300), u?.password_hash)) {
-      loginFailed(req.ip, a.username);
+      confirmFailed(req.ip, a.sessionId);
       audit(req, 'auth.sudo', null, undefined, false, 'bad password');
       return reply.code(401).send({ error: 'Wrong password' });
     }
@@ -132,9 +133,10 @@ export default async function authRoutes(app: FastifyInstance) {
 
   app.post<{ Body: { current: string; next: string } }>('/api/auth/password', { preHandler: requireAdmin }, async (req, reply) => {
     const a = req.auth as any;
-    if (!limited(req, 'pw', 10)) return reply.code(429).send({ error: 'Too many attempts' });
+    if (!limited(req, 'pw', 10) || !confirmAllowed(req.ip, a.sessionId)) return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
     const u = q.get<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', a.userId)!;
     if (!checkPassword(str(req.body?.current, 300), u.password_hash)) {
+      confirmFailed(req.ip, a.sessionId);
       audit(req, 'auth.password', null, undefined, false, 'bad current password');
       return reply.code(400).send({ error: 'Current password is not correct' });
     }
@@ -196,20 +198,31 @@ export default async function authRoutes(app: FastifyInstance) {
     audit(req, 'auth.totp.enable', null, undefined, true);
     return { ok: true, recoveryCodes };
   });
-  app.post('/api/auth/totp/recovery-codes', { preHandler: requireSudo }, async (req, reply) => {
+  app.post<{ Body: { code?: string } }>('/api/auth/totp/recovery-codes', { preHandler: requireSudo }, async (req, reply) => {
     const a = req.auth as any;
-    const u = q.get<{ totp_enabled: number }>('SELECT totp_enabled FROM users WHERE id = ?', a.userId)!;
-    if (!u.totp_enabled) return reply.code(400).send({ error: 'Enable 2FA first' });
+    if (!limited(req, 'totp', 10) || !confirmAllowed(req.ip, a.sessionId)) return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
+    const u = q.get<{ totp_enabled: number; totp_secret: string | null; totp_last_counter: number }>('SELECT * FROM users WHERE id = ?', a.userId)!;
+    if (!u.totp_enabled || !u.totp_secret) return reply.code(400).send({ error: 'Enable 2FA first' });
+    // new codes bypass the second factor for good, so the password alone is not enough to mint them
+    if (!secondFactorOk(a.userId, u.totp_secret, u.totp_last_counter, str(req.body?.code, 32))) {
+      confirmFailed(req.ip, a.sessionId);
+      return reply.code(400).send({ error: 'Enter a current 2FA or recovery code' });
+    }
     audit(req, 'auth.totp.recovery-codes', null, undefined, true);
     return { recoveryCodes: issueRecoveryCodes(a.userId) };
   });
   app.post<{ Body: { password: string; code: string } }>('/api/auth/totp/disable', { preHandler: requireAdmin }, async (req, reply) => {
     const a = req.auth as any;
-    if (!limited(req, 'totp', 10)) return reply.code(429).send({ error: 'Too many attempts' });
+    if (!limited(req, 'totp', 10) || !confirmAllowed(req.ip, a.sessionId)) return reply.code(429).send({ error: 'Too many failed attempts. Try again in 15 minutes.' });
     const u = q.get<{ password_hash: string; totp_secret: string | null; totp_last_counter: number; totp_enabled: number }>('SELECT * FROM users WHERE id = ?', a.userId)!;
-    if (!checkPassword(str(req.body?.password, 300), u.password_hash)) return reply.code(400).send({ error: 'Wrong password' });
-    if (u.totp_enabled && u.totp_secret && !secondFactorOk(a.userId, u.totp_secret, u.totp_last_counter, str(req.body?.code, 32)))
+    if (!checkPassword(str(req.body?.password, 300), u.password_hash)) {
+      confirmFailed(req.ip, a.sessionId);
+      return reply.code(400).send({ error: 'Wrong password' });
+    }
+    if (u.totp_enabled && u.totp_secret && !secondFactorOk(a.userId, u.totp_secret, u.totp_last_counter, str(req.body?.code, 32))) {
+      confirmFailed(req.ip, a.sessionId);
       return reply.code(400).send({ error: 'Enter a current 2FA or recovery code' });
+    }
     q.run('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_counter = 0 WHERE id = ?', a.userId);
     q.run('DELETE FROM recovery_codes WHERE user_id = ?', a.userId);
     audit(req, 'auth.totp.disable', null, undefined, true);

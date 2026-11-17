@@ -37,7 +37,13 @@ export const streamero: Plugin<Cfg, StreameroData> = {
   http: (c) => ({ headers: c.apiKey ? { [c.apiKeyHeader || 'X-Api-Key']: c.apiKey } : {} }),
   async collect({ http, config: c }) {
     const r = await http.get<any>(c.statsPath || '/api/stats');
-    return finish({ version: r.version, streams: r.streams ?? [], library: r.library ?? {}, recentlyAdded: (r.recentlyAdded ?? []).slice(0, 12) });
+    if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error('The stats endpoint did not return a JSON object');
+    const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+    return finish({
+      version: r.version == null ? undefined : String(r.version).slice(0, 40),
+      streams: arr(r.streams).map((s: any) => ({ ...s, user: String(s.user ?? '?'), title: String(s.title ?? '?'), progress: Number(s.progress) || 0, transcoding: !!s.transcoding, bandwidth: Number(s.bandwidth) || 0 })),
+      library: r.library && typeof r.library === 'object' ? r.library : {}, recentlyAdded: arr(r.recentlyAdded).slice(0, 12),
+    });
   },
   mock(ctx) {
     const t = ctx.tick;

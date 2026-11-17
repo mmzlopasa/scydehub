@@ -53,7 +53,8 @@ export function AreaChart({ series, height = 180, min: fixedMin, max: fixedMax, 
   const t0 = Math.min(...all.map((p) => p.ts));
   const t1 = Math.max(...all.map((p) => p.ts));
   const lo = fixedMin ?? Math.min(0, ...all.map((p) => p.v));
-  const hi = fixedMax ?? Math.max(...all.map((p) => p.v), lo + 1) * 1.08;
+  const top = Math.max(...all.map((p) => p.v), lo + 1);
+  const hi = fixedMax ?? lo + (top - lo) * 1.08; // headroom relative to the range, so negative series are not clipped
   if (all.length < 2) return <div className="grid place-items-center text-xs text-muted" style={{ height }}>Not enough data yet</div>;
   const norm = (s: Series) => (s.data.length ? [{ ts: t0, v: s.data[0].v }, ...s.data, { ts: t1, v: s.data[s.data.length - 1].v }] : []);
   const hx = hover === null ? null : t0 + (t1 - t0) * hover;

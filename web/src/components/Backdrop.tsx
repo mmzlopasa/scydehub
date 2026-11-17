@@ -86,14 +86,16 @@ function PlanetScene({ a, strong }: { a: Appearance; strong?: boolean }) {
       { rx: 1.95, ry: 0.6, rot: -0.3, w: 1, sat: 2.2, sv: -0.07, dash: [3, 9] },
       { rx: 2.4, ry: 0.8, rot: -0.46, w: 0.8, sat: 4.1, sv: 0.045, dash: [1, 14] },
     ];
-    let W = 0, H = 0, dpr = 1, raf = 0, last = 0, mx = 0, my = 0, tmx = 0, tmy = 0, running = true;
-    const motion = document.documentElement.dataset.motion ?? 'full';
-    const animated = motion === 'full';
+    let W = -1, H = -1, dpr = 1, raf = 0, last = 0, mx = 0, my = 0, tmx = 0, tmy = 0, running = true;
+    // decided from the setting itself: the data-motion attribute is written by a parent effect that runs after this one
+    const animated = a.animations === 'full' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const resize = () => {
-      dpr = Math.min(1.5, window.devicePixelRatio || 1);
-      W = canvas.clientWidth; H = canvas.clientHeight;
-      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+      const nw = canvas.clientWidth, nh = canvas.clientHeight, nd = Math.min(1.5, window.devicePixelRatio || 1);
+      if (nw === W && nh === H && nd === dpr) return;
+      W = nw; H = nh; dpr = nd;
+      canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); // this clears the bitmap…
+      if (!running && document.visibilityState === 'visible') { running = true; last = 0; raf = requestAnimationFrame(frame); } // …so a still scene is drawn again
     };
     resize();
     const ro = new ResizeObserver(resize);

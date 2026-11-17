@@ -15,7 +15,9 @@ export const vaultwarden: Plugin<Cfg, VwData> = {
     const t0 = performance.now();
     const alive = await http.get<string>('/alive');
     const responseMs = Math.round(performance.now() - t0);
-    if (tick % 30 === 1 || !scratch.version) scratch.version = await http.get<string>('/api/version').catch(() => undefined);
+    if (typeof alive !== 'string' || alive.length > 64) throw new Error('This does not look like Vaultwarden (/alive did not answer with a timestamp)');
+
+    if (tick % 30 === 1 || !scratch.version) scratch.version = await http.get<string>('/api/version').then((v) => (typeof v === 'string' && v.length < 40 ? v : undefined)).catch(() => undefined);
     const u = new URL(http.baseUrl);
     if (u.protocol === 'https:' && (tick % 60 === 1 || scratch.cert === undefined)) {
       const r = await sslProbe(u.hostname, Number(u.port) || 443, 0);

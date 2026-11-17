@@ -4,11 +4,11 @@ import type { Profile } from './device';
 import { GRID } from './device';
 
 /** Places widgets that have no saved position on this profile: first free spot, row by row. */
-export function resolveLayout(widgets: WidgetRow[], saved: LayoutItem[] | undefined, profile: Profile, fallback?: LayoutItem[]): LayoutItem[] {
+export function resolveLayout(widgets: WidgetRow[], saved: LayoutItem[] | undefined, profile: Profile, fallback?: LayoutItem[], fallbackCols = 24): LayoutItem[] {
   const cols = GRID[profile].cols;
   const ids = new Set(widgets.map((w) => w.id));
   const out: LayoutItem[] = [];
-  const src = Array.isArray(saved) ? saved : scaleLayout(Array.isArray(fallback) ? fallback : undefined, cols);
+  const src = Array.isArray(saved) ? saved : scaleLayout(Array.isArray(fallback) ? fallback : undefined, cols, fallbackCols);
   for (const l of src ?? []) {
     if (!l || !ids.has(l.i)) continue;
     const w = Math.max(1, Math.min(Number(l.w) || 1, cols));
@@ -43,15 +43,17 @@ function stretch(items: LayoutItem[], cols: number) {
   }
 }
 
-function scaleLayout(l: LayoutItem[] | undefined, cols: number) {
+function scaleLayout(l: LayoutItem[] | undefined, cols: number, srcCols: number) {
   if (!l) return undefined;
-  if (cols === 24) return l;
+  if (cols === srcCols) return l;
   if (cols <= 8) {
     // phone: single column, keep the visual order
     let y = 0;
     return [...l].sort((a, b) => a.y - b.y || a.x - b.x).map((it) => { const r = { ...it, x: 0, y, w: cols }; y += it.h; return r; });
   }
-  return l.map((it) => ({ ...it, x: Math.round((it.x / 24) * cols), w: Math.max(2, Math.round((it.w / 24) * cols)) }));
+  // scale the edges, not position and width separately: neighbours that touched still touch and never overlap
+  const k = cols / srcCols;
+  return l.map((it) => { const x = Math.round(it.x * k); return { ...it, x, w: Math.max(2, Math.round((it.x + it.w) * k) - x) }; });
 }
 
 export function findSpot(items: LayoutItem[], w: number, h: number, cols: number) {

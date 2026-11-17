@@ -5,7 +5,7 @@ import { Search, Zap, Settings, MonitorPlay, Pencil, CornerDownLeft } from 'luci
 import { useStore, setState, getState } from '../lib/store';
 import { runAction } from '../lib/hooks';
 import { CoreIcon } from './icons';
-import { ServiceIcon, StatusDot, cx } from './ui';
+import { ServiceIcon, StatusDot, cx, useEscape } from './ui';
 
 interface Cmd { id: string; group: string; label: string; hint?: string; icon: ReactNode; run: () => void; keywords?: string }
 
@@ -16,6 +16,7 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
   const plugins = useStore((s) => s.plugins);
   const states = useStore((s) => s.states);
   const isAdmin = useStore((s) => s.me?.auth?.kind === 'admin');
+  const editMode = useStore((s) => s.editMode);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -34,13 +35,13 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
         }
     }
     if (isAdmin) {
-      out.push({ id: 'edit', group: 'General', label: getState().editMode ? 'Done editing' : 'Edit layout', icon: <Pencil className="size-4" />, run: () => setState({ editMode: !getState().editMode }) });
+      out.push({ id: 'edit', group: 'General', label: editMode ? 'Done editing' : 'Edit layout', icon: <Pencil className="size-4" />, run: () => setState({ editMode: !getState().editMode }) });
       const pages: [string, string][] = [['services', 'Services'], ['checks', 'Checks'], ['alerts', 'Alerts & channels'], ['incidents', 'Incidents'], ['boards', 'Boards'], ['kiosk', 'Kiosk & devices'], ['customize', 'Customize'], ['security', 'Security'], ['audit', 'Audit log'], ['system', 'Backup & system']];
       for (const [k, l] of pages) out.push({ id: `s:${k}`, group: 'Settings', label: l, icon: <Settings className="size-4" />, run: () => nav(`/settings/${k}`) });
     }
     out.push({ id: 'kiosk', group: 'General', label: 'Open kiosk mode', icon: <MonitorPlay className="size-4" />, run: () => nav('/kiosk') });
     return out;
-  }, [boards, instances, plugins, states, isAdmin, nav, onOpenInstance]);
+  }, [boards, instances, plugins, states, isAdmin, nav, onOpenInstance, editMode]);
 
   const filtered = useMemo(() => {
     const t = q.toLowerCase().trim();
@@ -49,7 +50,8 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
       .map((c) => {
         const hay = `${c.label} ${c.keywords ?? ''} ${c.group}`.toLowerCase();
         const idx = hay.indexOf(t);
-        const fuzzy = idx < 0 && t.split('').every((ch, i, arr) => hay.indexOf(ch, i ? hay.indexOf(arr[i - 1]) : 0) >= 0);
+        let p = 0; // subsequence match: every typed character, in order
+        const fuzzy = idx < 0 && [...t].every((ch) => (p = hay.indexOf(ch, p) + 1) > 0);
         return { c, score: idx === 0 ? 3 : idx > 0 ? 2 : fuzzy ? 1 : 0 };
       })
       .filter((x) => x.score > 0)
@@ -59,6 +61,8 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
   }, [cmds, q]);
 
   useEffect(() => { setSel(0); }, [q]);
+  useEffect(() => { setSel((s) => Math.max(0, Math.min(s, filtered.length - 1))); }, [filtered.length]);
+  useEscape(open, onClose);
   useEffect(() => { listRef.current?.querySelector(`[data-i="${sel}"]`)?.scrollIntoView({ block: 'nearest' }); }, [sel]);
   if (!open) return null;
   const exec = (c?: Cmd) => { if (!c) return; onClose(); setTimeout(c.run, 0); };
@@ -73,7 +77,6 @@ export function CommandPalette({ open, onClose, onOpenInstance }: { open: boolea
               if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(filtered.length - 1, s + 1)); }
               else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
               else if (e.key === 'Enter') exec(filtered[sel]);
-              else if (e.key === 'Escape') onClose();
             }} />
           <kbd className="rounded-md border border-line px-1.5 py-0.5 text-[10px] text-muted">ESC</kbd>
         </div>

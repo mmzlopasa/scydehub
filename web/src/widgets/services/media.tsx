@@ -36,7 +36,8 @@ export function StreameroStreams({ data, size }: WidgetProps) {
     </List>
   );
 }
-function Avatar({ name }: { name: string }) {
+function Avatar({ name: raw }: { name: string }) {
+  const name = String(raw || '?');
   const hue = [...name].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
   return <span className="grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-white ring-2 ring-[var(--bg)]" style={{ background: `hsl(${hue} 60% 45%)` }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
@@ -130,7 +131,7 @@ export function ProwlarrIndexers({ data, size, instance }: WidgetProps) {
           ))}
         </List>
       ) : failing.length > 0 && <div className="text-xs text-bad">Failing: {failing.map((f: any) => f.name).join(', ')}</div>}
-      {size === 'L' && instance && <button className="text-xs text-accent" onClick={stop(() => runAction(instance.id, 'testAll'))}>Test all indexers</button>}
+      {(size === 'L' || size === 'XL') && instance && <button className="text-xs text-accent" onClick={stop(() => runAction(instance.id, 'testAll'))}>Test all indexers</button>}
     </div>
   );
 }
@@ -162,7 +163,7 @@ export function ImmichLibrary({ data, size }: WidgetProps) {
           ) : <div className="text-xs text-muted">All jobs are done</div>}
         </Section>
       )}
-      {size === 'L' && data?.users?.length > 0 && (
+      {(size === 'L' || size === 'XL') && data?.users?.length > 0 && (
         <Section title={<span className="flex items-center gap-1"><Users className="size-3" />Users</span>}>
           {data.users.map((u: any) => <Row key={u.name} title={u.name} sub={`${num(u.photos)} photos · ${num(u.videos)} videos`} right={<span className="num text-xs">{bytes(u.usage)}</span>} />)}
         </Section>

@@ -30,10 +30,13 @@ class Prefs(ctx: Context) {
             if (plain.isNotEmpty()) token = plain
             return plain
         }
-        set(v) {
-            val enc = encrypt(v.trim())
-            p.edit().remove("token").putString("token_enc", enc).apply()
-        }
+        set(v) { saveToken(v) }
+    /** false when the Keystore is unavailable (seen on some TV boxes): nothing is stored, and never in plain text */
+    fun saveToken(v: String): Boolean = try {
+        val enc = encrypt(v.trim())
+        p.edit().remove("token").putString("token_enc", enc).apply()
+        true
+    } catch (_: Exception) { false }
     var profile: String
         get() = p.getString("profile", "tv") ?: "tv"
         set(v) = p.edit().putString("profile", v).apply()

@@ -10,9 +10,13 @@ export function pick(obj: any, path: string): any {
 /** lines like "Label = path.to.value | unit" */
 export function parseFieldLines(s: string) {
   return (s ?? '').split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => {
-    const [left, unit] = l.split('|').map((x) => x.trim());
-    const [label, path] = left.includes('=') ? left.split('=').map((x) => x.trim()) : [left, left];
-    return { label, path, unit: unit || '' };
+    // unit = after the LAST "|" and only if it cannot be part of an expression (PromQL uses | inside regexes);
+    // label = before the FIRST "=" unless that "=" belongs to a matcher or comparison ({job="x"}, ==, >=, =~)
+    const u = /^(.*)\|\s*([^|"'{}()[\]]*)$/.exec(l);
+    const left = (u ? u[1] : l).trim();
+    const i = left.indexOf('=');
+    const hasLabel = i > 0 && !/[{(\[<>!=~]/.test(left.slice(0, i)) && !/^[=~]/.test(left.slice(i + 1));
+    return { label: (hasLabel ? left.slice(0, i) : left).trim(), path: (hasLabel ? left.slice(i + 1) : left).trim(), unit: u ? u[2].trim() : '' };
   });
 }
 
@@ -42,16 +46,28 @@ export const httpJson: Plugin<HttpCfg, { values: GenericValue[] }> = {
       const v = pick(r, f.path);
       return { label: f.label, unit: f.unit, value: typeof v === 'number' || typeof v === 'string' ? v : v == null ? null : JSON.stringify(v) };
     });
-    const metrics = Object.fromEntries(values.filter((v) => typeof v.value === 'number').map((v) => [slug(v.label), v.value as number]));
-    return { status: 'up', summary: values.slice(0, 2).map((v) => `${v.label}: ${v.value}${v.unit}`).join(' · '), data: { values }, metrics };
+    const metrics = metricsOf(values);
+    return { status: 'up', summary: values.slice(0, 2).map((v) => `${v.label}: ${v.value ?? '—'}${v.unit}`).join(' · '), data: { values }, metrics };
   },
   mock(ctx) {
     const values = parseFieldLines(ctx.config.fields || 'Value = value').map((f, i) => ({ label: f.label, unit: f.unit, value: Math.round(wave(ctx.tick + i * 5, 50, 20)) }));
-    return { status: 'up', data: { values }, metrics: Object.fromEntries(values.map((v) => [slug(v.label), v.value])) };
+    return { status: 'up', data: { values }, metrics: metricsOf(values) };
   },
   widgets: [{ id: 'values', name: 'HTTP/JSON values', description: 'Arbitrary values from a JSON API', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
 };
-const slug = (s: string) => s.toLowerCase().normalize('NFD').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
+const slug = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_|_$/g, '');
+/** numeric values as history metrics; labels that reduce to the same (or an empty) key get a suffix instead of overwriting each other */
+function metricsOf(values: GenericValue[]) {
+  const out: Record<string, number> = {};
+  for (const v of values) {
+    if (typeof v.value !== 'number' || !Number.isFinite(v.value)) continue;
+    const base = slug(v.label) || 'value';
+    let key = base;
+    for (let n = 2; key in out; n++) key = `${base}_${n}`;
+    out[key] = v.value;
+  }
+  return out;
+}
 
 // ---------------- Prometheus ----------------
 interface PromCfg { url: string; bearer?: string; queries: string }
@@ -68,17 +84,32 @@ export const prometheus: Plugin<PromCfg, { values: GenericValue[] }> = {
   http: (c) => ({ headers: c.bearer ? { Authorization: `Bearer ${c.bearer}` } : ({} as Record<string, string>) }),
   async collect({ http, config: c }) {
     const values: GenericValue[] = [];
+    const failed: string[] = [];
+    let lastError: unknown;
     for (const f of parseFieldLines(c.queries)) {
-      const r = await http.get<any>('/api/v1/query', { query: { query: f.path } });
-      const v = r?.data?.result?.[0]?.value?.[1];
-      values.push({ label: f.label, unit: f.unit, value: v === undefined ? null : Math.round(Number(v) * 100) / 100 });
+      try {
+        const r = await http.get<any>('/api/v1/query', { query: { query: f.path } });
+        const d = r?.data;
+        // scalar results are [ts, "42"], vectors are [{ value: [ts, "42"] }]
+        const raw = d?.resultType === 'scalar' || d?.resultType === 'string' ? d.result?.[1] : d?.result?.[0]?.value?.[1];
+        const num = Number(raw);
+        values.push({ label: f.label, unit: f.unit, value: raw === undefined || !Number.isFinite(num) ? null : Math.round(num * 100) / 100 });
+      } catch (e) {
+        // one mistyped query must not take the other values down with it
+        lastError = e;
+        failed.push(f.label);
+        values.push({ label: f.label, unit: f.unit, value: null });
+      }
     }
-    const metrics = Object.fromEntries(values.filter((v) => typeof v.value === 'number').map((v) => [slug(v.label), v.value as number]));
-    return { status: 'up', summary: values.slice(0, 2).map((v) => `${v.label}: ${v.value}${v.unit}`).join(' · '), data: { values }, metrics };
+    if (failed.length && failed.length === values.length) throw lastError;
+    return {
+      status: failed.length ? 'degraded' : 'up', summary: values.slice(0, 2).map((v) => `${v.label}: ${v.value ?? '—'}${v.unit}`).join(' · '), data: { values }, metrics: metricsOf(values),
+      alerts: failed.map((l) => ({ key: `query:${l}`, severity: 'warning' as const, message: `Prometheus query "${l}" failed` })),
+    };
   },
   mock(ctx) {
     const values = parseFieldLines(ctx.config.queries || 'Temp CPU = x | °C').map((f, i) => ({ label: f.label, unit: f.unit, value: Math.round(wave(ctx.tick + i * 3, 48, 8) * 10) / 10 }));
-    return { status: 'up', data: { values }, metrics: Object.fromEntries(values.map((v) => [slug(v.label), v.value])) };
+    return { status: 'up', data: { values }, metrics: metricsOf(values) };
   },
   widgets: [{ id: 'values', name: 'Prometheus values', description: 'PromQL query results', sizes: ['S', 'M', 'L'], defaultSize: 'S' }],
 };
@@ -88,7 +119,7 @@ interface DockerCfg { url: string }
 export interface DockerData { containers: { id: string; name: string; image: string; state: string; status: string; health?: string }[] }
 
 const dockerAgents = new Map<string, Agent>();
-async function dockerGet(base: string, path: string, method = 'GET') {
+async function dockerGet(base: string, path: string, method = 'GET', timeoutMs = 10_000) {
   let url = base, dispatcher: Agent | undefined;
   if (base.startsWith('unix://')) {
     const socketPath = base.slice(7);
@@ -96,7 +127,7 @@ async function dockerGet(base: string, path: string, method = 'GET') {
     dispatcher = dockerAgents.get(socketPath);
     url = 'http://docker';
   }
-  const r = await fetch(url.replace(/\/+$/, '') + path, { method, dispatcher, signal: AbortSignal.timeout(10_000) } as any);
+  const r = await fetch(url.replace(/\/+$/, '') + path, { method, dispatcher, signal: AbortSignal.timeout(timeoutMs) } as any);
   if (r.status >= 400) throw new Error(`Docker HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const t = await r.text();
   return t ? JSON.parse(t) : null;
@@ -119,6 +150,7 @@ export const docker: Plugin<DockerCfg, DockerData> = {
   fields: [{ key: 'url', label: 'Docker endpoint', type: 'string', required: true, default: 'http://docker-socket-proxy:2375', placeholder: 'unix:///var/run/docker.sock or http://host:2375' }],
   async collect({ config: c }) {
     const list = await dockerGet(c.url, '/containers/json?all=1');
+    if (!Array.isArray(list)) throw new Error('Unexpected answer from Docker — check the endpoint');
     return dockerFinish({
       containers: list.map((x: any) => ({
         id: x.Id.slice(0, 12), name: String(x.Names?.[0] ?? '').replace(/^\//, ''), image: x.Image, state: x.State, status: x.Status,
@@ -136,7 +168,7 @@ export const docker: Plugin<DockerCfg, DockerData> = {
   actions: [
     {
       id: 'restart', label: 'Restart container', danger: true, params: [{ key: 'id', label: 'Container ID', type: 'string', required: true }],
-      run: async ({ config: c }, p) => { if (!/^[\w.-]+$/.test(String(p.id))) throw new Error('Invalid ID'); await dockerGet(c.url, `/containers/${p.id}/restart`, 'POST'); return 'Container restarted'; },
+      run: async ({ config: c }, p) => { if (!/^[\w.-]+$/.test(String(p.id))) throw new Error('Invalid ID'); await dockerGet(c.url, `/containers/${p.id}/restart?t=10`, 'POST', 40_000); return 'Container restarted'; },
     },
   ],
   widgets: [{ id: 'containers', name: 'Docker containers', description: 'Status of all containers', sizes: ['S', 'M', 'L'], defaultSize: 'M' }],

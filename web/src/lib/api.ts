@@ -3,9 +3,17 @@ export class ApiError extends Error {
 }
 
 const KIOSK_KEY = 'scyde.kioskToken';
+/** Tokens travel in an HTTP header and a WebSocket sub-protocol: anything outside this alphabet can only break both. */
+export const validKioskToken = (t: unknown): t is string => typeof t === 'string' && /^[A-Za-z0-9_.~-]{8,200}$/.test(t);
 export const kioskToken = {
-  get: () => { try { return localStorage.getItem(KIOSK_KEY); } catch { return null; } },
-  set: (t: string) => { try { localStorage.setItem(KIOSK_KEY, t); } catch { /* ignore */ } },
+  get: () => {
+    try {
+      const t = localStorage.getItem(KIOSK_KEY);
+      if (t && !validKioskToken(t)) { localStorage.removeItem(KIOSK_KEY); return null; }
+      return t;
+    } catch { return null; }
+  },
+  set: (t: string) => { try { if (validKioskToken(t)) localStorage.setItem(KIOSK_KEY, t); } catch { /* ignore */ } },
   clear: () => { try { localStorage.removeItem(KIOSK_KEY); } catch { /* ignore */ } },
 };
 

@@ -6,14 +6,24 @@ import { runAction } from '../../lib/hooks';
 import { useStore } from '../../lib/store';
 import { List, Row, stop } from '../common';
 
-function stateTone(q: any): 'ok' | 'warn' | 'bad' | 'info' | 'muted' {
-  if (q.trackedStatus === 'error') return 'bad';
-  if (q.trackedStatus === 'warning') return 'warn';
-  if (q.status === 'completed' || q.state === 'importPending') return 'ok';
-  if (q.status === 'downloading') return 'info';
-  return 'muted';
+type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'muted';
+/** trackedDownloadState tells more than status once a download has finished */
+const BY_STATE: Record<string, [string, Tone]> = {
+  importBlocked: ['Import blocked', 'warn'], importPending: ['Waiting to import', 'info'], importing: ['Importing', 'info'], imported: ['Imported', 'ok'],
+  failedPending: ['Failed', 'bad'], failed: ['Failed', 'bad'], ignored: ['Ignored', 'muted'],
+};
+const BY_STATUS: Record<string, [string, Tone]> = {
+  downloading: ['Downloading', 'info'], queued: ['Queued', 'muted'], completed: ['Done', 'ok'], paused: ['Paused', 'muted'], delay: ['Delayed', 'muted'],
+  failed: ['Failed', 'bad'], warning: ['Warning', 'warn'], downloadClientUnavailable: ['Client unavailable', 'bad'], fallback: ['Fallback', 'warn'], unknown: ['Unknown', 'muted'],
+};
+function queueBadge(q: any): [string, Tone] {
+  const [label, tone] = BY_STATE[q.state] ?? BY_STATUS[q.status] ?? [String(q.status ?? 'unknown'), 'muted' as Tone];
+  if (q.trackedStatus === 'error') return [label, 'bad'];
+  if (q.trackedStatus === 'warning' && tone !== 'bad') return [label, 'warn'];
+  return [label, tone];
 }
-const stateLabel = (q: any) => (q.state === 'importPending' ? 'Importing' : q.status === 'downloading' ? 'Downloading' : q.status === 'queued' ? 'Queued' : q.status === 'completed' ? 'Done' : q.status);
+const stateTone = (q: any) => queueBadge(q)[1];
+const stateLabel = (q: any) => queueBadge(q)[0];
 
 /** Matches *arr queue items with qBittorrent torrents by downloadId (= torrent hash). */
 function useTorrentMap() {
@@ -59,8 +69,7 @@ export function ArrQueue({ data, size, instance, plugin }: WidgetProps) {
             <div className="num mt-1 flex gap-3 text-[11px] text-muted">
               <span>{bytes(x.size - x.sizeleft)} / {bytes(x.size)}</span>
               {t && t.dlspeed > 0 && <span className="text-accent">↓ {bytes(t.dlspeed)}/s</span>}
-              {x.timeleft && x.status === 'downloading' && <span className="ml-auto">ETA {x.timeleft}</span>}
-              {t && <span className="ml-auto">qBit: {t.state}</span>}
+              <span className="ml-auto flex gap-3">{x.timeleft && x.status === 'downloading' && <span>ETA {x.timeleft}</span>}{t && <span>qBit: {t.state}</span>}</span>
             </div>
           </div>
         );
@@ -119,7 +128,7 @@ export function CalendarList({ items, size }: { items: any[]; size: string }) {
         <div key={day} className="mb-1">
           <div className="sticky top-0 z-[1] bg-[color-mix(in_oklab,var(--panel)_92%,transparent)] px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted backdrop-blur">{day}</div>
           {list.map((c: any) => (
-            <Row key={`${c.source ?? ''}${c.id}`}
+            <Row key={`${c.instanceId ?? c.source ?? ''}:${c.id}:${c.date}`}
               left={c.source === 'radarr' ? <Film className="size-4 text-muted" /> : c.source === 'sonarr' ? <Tv className="size-4 text-muted" /> : undefined}
               title={c.title} sub={c.subtitle}
               right={<div className="flex items-center gap-2">{size !== 'M' && c.kind && <Badge>{c.kind}</Badge>}{c.hasFile ? <Badge tone="ok">Downloaded</Badge> : c.source !== 'radarr' && c.kind === undefined ? <span className="num text-xs text-muted">{time(c.date)}</span> : null}</div>} />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertOctagon, Pause, Play, Wifi, WifiOff } from 'lucide-react';
+import { AlertOctagon, Pause, Play, Wifi, WifiOff, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { kioskToken, post } from '../lib/api';
 import type { Profile } from '../lib/device';
@@ -23,12 +24,24 @@ function inWindow(start: string, end: string, d = new Date()) {
 function useWakeLock() {
   useEffect(() => {
     let lock: any = null;
-    const req = async () => { try { lock = await (navigator as any).wakeLock?.request('screen'); } catch { /* not allowed */ } };
+    let gone = false;
+    const req = async () => {
+      try {
+        const l = await (navigator as any).wakeLock?.request('screen');
+        if (gone) l?.release?.(); else lock = l; // unmounted while the request was pending
+      } catch { /* not allowed */ }
+    };
     void req();
     const vis = () => document.visibilityState === 'visible' && void req();
     document.addEventListener('visibilitychange', vis);
-    return () => { document.removeEventListener('visibilitychange', vis); lock?.release?.(); };
+    return () => { gone = true; document.removeEventListener('visibilitychange', vis); lock?.release?.(); };
   }, []);
+}
+
+/** Ticks every second on its own, so the boards below do not re-render with it. */
+function KioskClock({ onClick }: { onClick: () => void }) {
+  const now = useNow(1000);
+  return <span className="dot select-none text-2xl font-semibold" onClick={onClick}>{time(now)}</span>;
 }
 
 export function Kiosk({ profile }: { profile: Profile }) {
@@ -44,14 +57,16 @@ export function Kiosk({ profile }: { profile: Profile }) {
   const [pausedUntil, setPausedUntil] = useState(0);
   const [cursor, setCursor] = useState(false);
   const [shift, setShift] = useState({ x: 0, y: 0 });
-  const now = useNow(1000);
+  const [manual, setManual] = useState(false); // paused by hand: stays until resumed
+  const now = useNow(10_000);
+  const nav = useNavigate();
   const sum = useSummary();
   const cursorTimer = useRef<number>();
   useWakeLock();
 
-  const paused = pausedUntil > now;
+  const paused = manual || pausedUntil > now;
   const interact = useCallback(() => {
-    setPausedUntil(Date.now() + (k?.pauseOnInteractSec ?? 120) * 1000);
+    setPausedUntil((p) => Math.max(p, Date.now() + (k?.pauseOnInteractSec ?? 120) * 1000));
     setCursor(true);
     clearTimeout(cursorTimer.current);
     cursorTimer.current = window.setTimeout(() => setCursor(false), 3000);
@@ -75,9 +90,14 @@ export function Kiosk({ profile }: { profile: Profile }) {
   // D-pad / keyboard: ←/→ boards, OK/space pause
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') { setIdx((i) => (i + 1) % list.length); interact(); }
-      else if (e.key === 'ArrowLeft') { setIdx((i) => (i - 1 + list.length) % list.length); interact(); }
-      else if (e.key === ' ' || e.key === 'MediaPlayPause') { setPausedUntil((p) => (p > Date.now() ? 0 : Date.now() + 3600_000)); }
+      const onControl = e.target instanceof HTMLElement && !!e.target.closest('button, a, input, textarea, select');
+      if (e.key === 'ArrowRight' && list.length) { setIdx((i) => (i + 1) % list.length); interact(); }
+      else if (e.key === 'ArrowLeft' && list.length) { setIdx((i) => (i - 1 + list.length) % list.length); interact(); }
+      else if (e.key === 'MediaPlayPause' || ((e.key === ' ' || e.key === 'Enter') && !onControl)) {
+        // space / OK on the remote: pause or resume the rotation (unless a button has the focus)
+        e.preventDefault();
+        setManual((m) => { if (m) setPausedUntil(0); return !m; });
+      }
       else if (e.key === 'ArrowDown') window.scrollBy({ top: 300, behavior: 'smooth' });
       else if (e.key === 'ArrowUp') window.scrollBy({ top: -300, behavior: 'smooth' });
     };
@@ -85,7 +105,7 @@ export function Kiosk({ profile }: { profile: Profile }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [list.length, interact]);
 
-  useEffect(() => { if (idx >= list.length) setIdx(0); }, [idx, list.length]);
+  useEffect(() => { if (!(idx < list.length)) setIdx(0); }, [idx, list.length]);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [idx]);
 
   // 5 quick taps on the clock: back to the native shell's setup screen (iOS app) or the token screen (browser)
@@ -114,7 +134,7 @@ export function Kiosk({ profile }: { profile: Profile }) {
           <div className="ml-auto flex items-center gap-4 text-sm">
             <span className={cx('num font-medium', sum.down ? 'text-bad' : 'text-ok')}>{sum.up}/{sum.total} online</span>
             {conn !== 'online' ? <WifiOff className="size-4 text-bad" /> : <Wifi className="size-4 text-muted" />}
-            <span className="dot select-none text-2xl font-semibold" onClick={secretTap}>{time(now)}</span>
+            <KioskClock onClick={secretTap} />
           </div>
         </div>
         {board ? <div key={board.id} className="animate-fade-up"><BoardView board={board} profile={profile} editing={false} kiosk /></div> : <div className="py-20 text-center text-muted">No boards.</div>}
@@ -144,11 +164,16 @@ export function Kiosk({ profile }: { profile: Profile }) {
       )}
 
       {dim > 0 && <div className="pointer-events-none fixed inset-0 z-[45] bg-black transition-opacity duration-[3000ms]" style={{ opacity: dim }} />}
-      {!paused && list.length > 1 && cursor && (
-        <button className="fixed bottom-4 right-4 z-40 grid size-10 place-items-center rounded-full bg-panel-2 text-muted" onClick={() => setPausedUntil(Date.now() + 3600_000)}><Pause className="size-4" /></button>
+      {/* with the header hidden there is no clock to tap: an invisible corner takes the five taps instead */}
+      {k?.showHeader === false && <div className="fixed right-0 top-0 z-30 size-16" onClick={(e) => { e.stopPropagation(); secretTap(); }} />}
+      {cursor && me?.auth?.kind === 'admin' && (
+        <button title="Leave kiosk mode" className="fixed bottom-4 left-4 z-40 flex h-10 items-center gap-2 rounded-full bg-panel-2 px-4 text-sm text-muted" onClick={(e) => { e.stopPropagation(); nav('/'); }}><X className="size-4" />Leave kiosk</button>
       )}
-      {paused && cursor && (
-        <button className="fixed bottom-4 right-4 z-40 grid size-10 place-items-center rounded-full bg-accent text-white" onClick={() => setPausedUntil(0)}><Play className="size-4" /></button>
+      {!paused && list.length > 1 && cursor && (
+        <button title="Pause rotation" className="fixed bottom-4 right-4 z-40 grid size-10 place-items-center rounded-full bg-panel-2 text-muted" onClick={(e) => { e.stopPropagation(); setManual(true); }}><Pause className="size-4" /></button>
+      )}
+      {paused && list.length > 1 && cursor && (
+        <button title="Resume rotation" className="fixed bottom-4 right-4 z-40 grid size-10 place-items-center rounded-full bg-accent text-[#14161c]" onClick={(e) => { e.stopPropagation(); setManual(false); setPausedUntil(0); }}><Play className="size-4" /></button>
       )}
     </div>
   );

@@ -39,7 +39,7 @@ export const channelTypes: ChannelType[] = [
           Title: `=?UTF-8?B?${Buffer.from(n.title, 'utf8').toString('base64')}?=`,
           Priority: n.resolved ? '3' : n.severity === 'critical' ? '5' : n.severity === 'warning' ? '4' : '3',
           Tags: n.resolved ? 'white_check_mark' : n.severity === 'critical' ? 'rotating_light' : 'warning',
-          ...(n.url ? { Click: n.url } : {}),
+          ...(n.url ? { Click: asciiUrl(n.url) } : {}),
           ...(c.token ? { Authorization: `Bearer ${c.token}` } : {}),
         },
         body: n.message,
@@ -67,7 +67,7 @@ export const channelTypes: ChannelType[] = [
     ],
     send: (c, n) =>
       post(`https://api.telegram.org/bot${c.botToken}/sendMessage`, {
-        chat_id: c.chatId, text: `${emoji(n)} <b>${esc(n.title)}</b>\n${esc(n.message)}`, parse_mode: 'HTML', disable_web_page_preview: true,
+        chat_id: c.chatId, text: `${emoji(n)} <b>${esc(n.title.slice(0, 300))}</b>\n${esc(n.message.slice(0, 3000))}`, parse_mode: 'HTML', disable_web_page_preview: true,
       }),
   },
   {
@@ -76,7 +76,7 @@ export const channelTypes: ChannelType[] = [
     send: (c, n) =>
       post(c.webhookUrl, {
         username: 'SCYDE Hub',
-        embeds: [{ title: `${emoji(n)} ${n.title}`, description: n.message, color: n.resolved ? 0x22c55e : n.severity === 'critical' ? 0xef4444 : 0xf59e0b, timestamp: new Date().toISOString(), url: n.url }],
+        embeds: [{ title: `${emoji(n)} ${n.title}`.slice(0, 256), description: n.message.slice(0, 4000), color: n.resolved ? 0x22c55e : n.severity === 'critical' ? 0xef4444 : 0xf59e0b, timestamp: new Date().toISOString(), url: n.url }],
       }),
   },
   {
@@ -85,18 +85,25 @@ export const channelTypes: ChannelType[] = [
       { key: 'host', label: 'SMTP host', type: 'string', required: true },
       { key: 'port', label: 'Port', type: 'number', default: 587 },
       { key: 'secure', label: 'Implicit TLS (port 465)', type: 'boolean', default: false },
+      { key: 'allowPlain', label: 'Allow an unencrypted connection (trusted local relay only)', type: 'boolean', default: false },
       { key: 'user', label: 'Username', type: 'string' },
       { key: 'pass', label: 'Password', type: 'secret' },
       { key: 'from', label: 'From', type: 'string', required: true },
       { key: 'to', label: 'To', type: 'string', required: true },
     ],
     async send(c, n) {
-      const t = nodemailer.createTransport({ host: c.host, port: Number(c.port) || 587, secure: !!c.secure, auth: c.user ? { user: c.user, pass: c.pass } : undefined });
-      await t.sendMail({ from: c.from, to: c.to, subject: `${emoji(n)} [SCYDE Hub] ${n.title}`, text: n.message + (n.url ? `\n\n${n.url}` : '') });
+      // without implicit TLS the connection must upgrade with STARTTLS before the password is sent — never in the clear
+      const t = nodemailer.createTransport({
+        host: c.host, port: Number(c.port) || 587, secure: !!c.secure, requireTLS: !c.secure && !c.allowPlain,
+        auth: c.user ? { user: c.user, pass: c.pass } : undefined, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 20_000,
+      });
+      await t.sendMail({ from: c.from, to: c.to, subject: `${emoji(n)} [SCYDE Hub] ${n.title}`.replace(/[\r\n]+/g, ' ').slice(0, 250), text: n.message + (n.url ? `\n\n${n.url}` : '') });
     },
   },
 ];
 
+/** HTTP header values must be ASCII: international host names and paths are converted (punycode, percent-encoding) */
+const asciiUrl = (u: string) => { try { return new URL(u).href; } catch { return encodeURI(u); } };
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 export const getChannelType = (id: string) => channelTypes.find((c) => c.id === id);

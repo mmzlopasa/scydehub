@@ -33,6 +33,7 @@ const hdr = (id: string, secret: string) => ({ Authorization: `PVEAPIToken=${id}
 async function collect(ctx: PluginContext<Cfg>) {
   const { http, config: c, scratch } = ctx;
   const nodesRaw = await http.get<{ data: any[] }>('/api2/json/nodes');
+  if (!Array.isArray(nodesRaw?.data)) throw new Error('Unexpected answer from Proxmox — the URL must be https://host:8006');
   const nodeNames = nodesRaw.data.map((n) => n.node).filter((n) => !c.node || n === c.node);
   const nodes: PveNode[] = [];
   const storage: PveStorage[] = [];
@@ -91,11 +92,18 @@ async function collect(ctx: PluginContext<Cfg>) {
 
   // snapshot counts (one call per guest) — refreshed rarely
   if (slow || !scratch.snaps) {
-    scratch.snaps = {};
-    for (const g of guests.filter((g) => !g.template)) {
-      const r = await http.get<{ data: any[] }>(`/api2/json/nodes/${g.node}/${g.type}/${g.vmid}/snapshot`).catch(() => null);
-      if (r) scratch.snaps[g.vmid] = r.data.filter((s) => s.name !== 'current').length;
+    // guests on an offline node cannot answer (each call would hang until its timeout); the rest are asked in
+    // small parallel batches with a short timeout so one slow guest never pushes the whole poll over its limit
+    const offline = new Set(nodes.filter((n) => !n.online).map((n) => n.node));
+    const todo = guests.filter((g) => !g.template && !offline.has(g.node));
+    const snaps: Record<number, number> = { ...(scratch.snaps ?? {}) };
+    for (let i = 0; i < todo.length; i += 8) {
+      await Promise.all(todo.slice(i, i + 8).map(async (g) => {
+        const r = await http.get<{ data: any[] }>(`/api2/json/nodes/${g.node}/${g.type}/${g.vmid}/snapshot`, { timeoutMs: 4000 }).catch(() => null);
+        if (Array.isArray(r?.data)) snaps[g.vmid] = r.data.filter((s) => s.name !== 'current').length;
+      }));
     }
+    scratch.snaps = snaps;
   }
   for (const g of guests) g.snapshots = scratch.snaps?.[g.vmid];
 
@@ -109,8 +117,12 @@ function build(data: PveData, c: Cfg) {
     const p = pct(s.used, s.total);
     if (s.active && p >= 90) alerts.push({ key: `storage:${s.node}:${s.storage}`, severity: p >= 95 ? 'critical' : 'warning', message: `Storage ${s.storage} is ${p}% full` });
   }
-  if (data.lastBackupTask && data.lastBackupTask.status !== 'OK')
-    alerts.push({ key: 'backup:task', severity: 'critical', message: `Last backup failed: ${data.lastBackupTask.status}` });
+  if (data.lastBackupTask && data.lastBackupTask.status !== 'OK') {
+    // "WARNINGS: 1" means the backup exists but something was skipped — worth a look, not an emergency
+    const st = String(data.lastBackupTask.status);
+    const warn = /^WARNINGS/i.test(st);
+    alerts.push({ key: 'backup:task', severity: warn ? 'warning' : 'critical', message: warn ? `Last backup finished with ${st.toLowerCase()}` : `Last backup failed: ${st}` });
+  }
   const maxAge = Number(c.backupMaxAgeHours) || 0;
   if (maxAge > 0) {
     for (const g of data.guests) {
@@ -162,7 +174,7 @@ const power = (action: string, label: string, danger = false) => ({
   async run(ctx: PluginContext<Cfg>, p: Record<string, any>) {
     if (!/^\d+$/.test(String(p.vmid)) || !['qemu', 'lxc'].includes(p.type) || !/^[\w.-]+$/.test(String(p.node))) throw new Error('Invalid parameters');
     const r = await actionClient(ctx).post<{ data: string }>(`/api2/json/nodes/${p.node}/${p.type}/${p.vmid}/status/${action}`, {});
-    return `${label}: ${p.type} ${p.vmid} (task ${String(r?.data ?? '').split(':').slice(-3, -2)[0] ?? 'ok'})`;
+    return `${label}: ${p.type} ${p.vmid} (task ${String(r?.data ?? '').split(':')[5] || 'started'})`;
   },
   mock(_ctx: PluginContext<Cfg>, p: Record<string, any>) {
     const g = mockState.guests.find((x) => x.vmid === Number(p.vmid));

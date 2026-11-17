@@ -10,7 +10,8 @@ import { List, Row, Section, stop } from '../common';
 export function QbtTransfer({ data, state, size, instance }: WidgetProps) {
   const dl = useMetricSeries(state?.id, 'dl', state?.metrics?.dl, 15);
   const up = useMetricSeries(state?.id, 'up', state?.metrics?.up, 15);
-  const paused = data && data.downloading === 0 && data.stopped > 0 && data.dlSpeed === 0;
+  // "Resume all" only when nothing is running at all; an idle client with finished torrents still offers Pause
+  const paused = !!data && data.stopped > 0 && data.downloading === 0 && data.seeding === 0;
   return (
     <div className="flex h-full flex-col gap-2">
       <div className="grid grid-cols-2 gap-3">
@@ -41,9 +42,11 @@ export function QbtTransfer({ data, state, size, instance }: WidgetProps) {
 }
 
 const QSTATE: Record<string, [string, 'ok' | 'info' | 'warn' | 'bad' | 'muted']> = {
-  downloading: ['Downloading', 'info'], forcedDL: ['Downloading', 'info'], metaDL: ['Metadata', 'info'], stalledDL: ['Stalled', 'warn'], queuedDL: ['Queued', 'muted'],
-  uploading: ['Seeding', 'ok'], stalledUP: ['Seeding', 'ok'], forcedUP: ['Seeding', 'ok'], stoppedDL: ['Paused', 'muted'], pausedDL: ['Paused', 'muted'],
-  stoppedUP: ['Done', 'ok'], pausedUP: ['Done', 'ok'], error: ['Error', 'bad'], missingFiles: ['Missing files', 'bad'], checkingDL: ['Checking', 'muted'],
+  downloading: ['Downloading', 'info'], forcedDL: ['Downloading', 'info'], metaDL: ['Metadata', 'info'], forcedMetaDL: ['Metadata', 'info'], stalledDL: ['Stalled', 'warn'],
+  queuedDL: ['Queued', 'muted'], checkingDL: ['Checking', 'muted'], allocating: ['Allocating', 'muted'], checkingResumeData: ['Checking', 'muted'], moving: ['Moving', 'info'],
+  uploading: ['Seeding', 'ok'], stalledUP: ['Seeding', 'ok'], forcedUP: ['Seeding', 'ok'], queuedUP: ['Queued', 'muted'], checkingUP: ['Checking', 'muted'],
+  stoppedDL: ['Paused', 'muted'], pausedDL: ['Paused', 'muted'], stoppedUP: ['Done', 'ok'], pausedUP: ['Done', 'ok'],
+  error: ['Error', 'bad'], missingFiles: ['Missing files', 'bad'], unknown: ['Unknown', 'muted'],
 };
 export function QbtTorrents({ data, size, instance }: WidgetProps) {
   const list = data?.active ?? [];
@@ -101,7 +104,7 @@ export function AdguardStats({ data, size, instance }: WidgetProps) {
           )}
         </div>
       </div>
-      {size !== 'S' && data?.hourly?.queries?.length > 0 && <div className="mt-auto"><Bars values={data.hourly.queries} values2={data.hourly.blocked} height={size === 'L' ? 70 : 44} /></div>}
+      {size !== 'S' && data?.hourly?.queries?.length > 0 && <div className="mt-auto"><Bars values={data.hourly.queries} values2={data.hourly.blocked} height={(size === 'L' || size === 'XL') ? 70 : 44} /></div>}
       {size !== 'S' && instance && (
         <Button size="sm" variant={protectedOn ? 'soft' : 'primary'} icon={protectedOn ? <ShieldOff className="size-3.5" /> : <Shield className="size-3.5" />}
           onClick={stop(() => runAction(instance.id, protectedOn ? 'pause' : 'resume', protectedOn ? { minutes: '10' } : {}, protectedOn ? '10 minutes' : undefined))}>

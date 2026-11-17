@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Plus, RotateCcw, Trash2, Sparkles, Type, LayoutGrid, Image as ImageIcon, PanelTop, Globe, Code2, Palette, Tag } from 'lucide-react';
-import { useStore, setState, holdSettingsReload } from '../../lib/store';
+import { useStore, setState, getState, holdSettingsReload } from '../../lib/store';
+import { fail, numOr } from '../../lib/fail';
 import { post, put } from '../../lib/api';
 import type { Settings } from '../../lib/types';
 import { Button, ColorInput, ImagePicker, Input, Label, Segmented, Slider, Toggle, inputCls, cx } from '../../components/ui';
@@ -14,21 +15,34 @@ function useLiveSettings() {
   const settings = useStore((s) => s.settings);
   const pending = useRef<Record<string, any>>({});
   const timer = useRef<number>();
-  useEffect(() => () => { clearTimeout(timer.current); if (Object.keys(pending.current).length) void put('/api/settings', pending.current).catch(() => {}); }, []);
+  const flush = () => {
+    clearTimeout(timer.current);
+    const body = pending.current;
+    if (!Object.keys(body).length) return;
+    pending.current = {};
+    put('/api/settings', body)
+      // what the server actually stored becomes the truth (it may refuse a value) — unless newer edits are queued
+      .then((st) => {
+        if (Object.keys(pending.current).length) return;
+        // a header link that is still being typed (not a full URL yet) is not stored by the server; keep it on screen
+        const links = getState().settings?.header.links ?? st.header.links;
+        setState({ settings: { ...st, header: { ...st.header, links } } });
+      })
+      .catch(fail);
+  };
+  useEffect(() => flush, []); // save whatever is still queued when leaving the page
   function update<K extends Section>(section: K, patch: Partial<Settings[K]>) {
-    if (!settings) return;
-    const next = { ...settings[section], ...patch };
+    const cur = getState().settings; // always the latest, also for two edits in the same tick
+    if (!cur) return;
     holdSettingsReload(2500);
-    setState({ settings: { ...settings, [section]: next } });
+    setState({ settings: { ...cur, [section]: { ...cur[section], ...patch } } });
     pending.current[section] = { ...(pending.current[section] ?? {}), ...patch };
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => {
-      const body = pending.current;
-      pending.current = {};
-      put('/api/settings', body).catch((e) => toast(e.message, 'bad'));
-    }, 500);
+    timer.current = window.setTimeout(flush, 500);
   }
-  return { settings, update };
+  /** drop queued edits (used by "Reset to defaults" so an old edit cannot come back afterwards) */
+  const discard = () => { clearTimeout(timer.current); pending.current = {}; };
+  return { settings, update, discard };
 }
 
 function Block({ icon, title, desc, children }: { icon: ReactNode; title: string; desc?: string; children: ReactNode }) {
@@ -61,7 +75,7 @@ const PRESETS: { name: string; a: Partial<Settings['appearance']> }[] = [
 ];
 
 export function Customize() {
-  const { settings: s, update } = useLiveSettings();
+  const { settings: s, update, discard } = useLiveSettings();
   const [tab, setTab] = useState<'brand' | 'theme' | 'background' | 'cards' | 'layout' | 'header' | 'regional' | 'css'>('brand');
   if (!s) return null;
   const a = s.appearance, b = s.branding, l = s.layout, h = s.header, r = s.regional;
@@ -70,7 +84,8 @@ export function Customize() {
 
   const reset = async () => {
     if (!(await confirmDialog({ title: 'Reset the look to defaults?', body: 'Name, logo, colours, background, fonts, layout options and header go back to the defaults. Boards, widgets and services are not touched.', danger: true, confirmLabel: 'Reset' }))) return;
-    try { setState({ settings: await post('/api/settings/reset-appearance') }); toast('Look reset to defaults'); } catch (e: any) { toast(e.message, 'bad'); }
+    discard();
+    try { setState({ settings: await post('/api/settings/reset-appearance') }); toast('Look reset to defaults'); } catch (e: any) { fail(e); }
   };
 
   return (
@@ -214,9 +229,9 @@ export function Customize() {
             <Row label="Temperature"><Segmented value={r.tempUnit} onChange={(v) => update('regional', { tempUnit: v })} options={[{ value: 'c', label: '°C' }, { value: 'f', label: '°F' }]} /></Row>
             <Row label="Weather location" wide>
               <div className="grid gap-3 sm:grid-cols-3">
-                <Label><span className="text-xs text-muted">Name</span><Input defaultValue={s.weather.name} onBlur={(e) => put('/api/settings', { weather: { ...s.weather, name: e.target.value } })} /></Label>
-                <Label><span className="text-xs text-muted">Latitude</span><Input type="number" step="0.001" defaultValue={s.weather.lat} onBlur={(e) => put('/api/settings', { weather: { ...s.weather, lat: Number(e.target.value) } })} /></Label>
-                <Label><span className="text-xs text-muted">Longitude</span><Input type="number" step="0.001" defaultValue={s.weather.lon} onBlur={(e) => put('/api/settings', { weather: { ...s.weather, lon: Number(e.target.value) } })} /></Label>
+                <Label><span className="text-xs text-muted">Name</span><Input key={`n${s.weather.name}`} defaultValue={s.weather.name} maxLength={60} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.weather.name) put('/api/settings', { weather: { name: v } }).then((st) => setState({ settings: st })).catch(fail); }} /></Label>
+                <Label><span className="text-xs text-muted">Latitude</span><Input type="number" step="0.001" key={`l${s.weather.lat}`} defaultValue={s.weather.lat} onBlur={(e) => { const n = numOr(e.target.value, -90, 90); if (n === undefined) { e.target.value = String(s.weather.lat); return; } if (n !== s.weather.lat) put('/api/settings', { weather: { lat: n } }).then((st) => setState({ settings: st })).catch(fail); }} /></Label>
+                <Label><span className="text-xs text-muted">Longitude</span><Input type="number" step="0.001" key={`l${s.weather.lon}`} defaultValue={s.weather.lon} onBlur={(e) => { const n = numOr(e.target.value, -180, 180); if (n === undefined) { e.target.value = String(s.weather.lon); return; } if (n !== s.weather.lon) put('/api/settings', { weather: { lon: n } }).then((st) => setState({ settings: st })).catch(fail); }} /></Label>
               </div>
             </Row>
           </Block>

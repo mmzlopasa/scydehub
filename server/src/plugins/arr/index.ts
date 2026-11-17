@@ -32,11 +32,12 @@ function mapQueue(kind: Kind, r: any): ArrQueueItem {
   };
 }
 
-function mapCalendar(kind: Kind, r: any): ArrCalendarItem {
+function mapCalendar(kind: Kind, r: any, from = -Infinity, to = Infinity): ArrCalendarItem {
   if (kind === 'radarr') {
-    const date = r.digitalRelease ?? r.physicalRelease ?? r.inCinemas ?? r.releaseDate;
-    const kindLabel = r.digitalRelease ? 'Digital' : r.physicalRelease ? 'Physical' : 'Cinema';
-    return { id: r.id, title: r.title, subtitle: r.year ? String(r.year) : undefined, date, hasFile: !!r.hasFile, kind: kindLabel };
+    // a movie has up to three release dates; show the one that put it into this calendar window
+    const cands = ([['Digital', r.digitalRelease], ['Physical', r.physicalRelease], ['Cinema', r.inCinemas]] as [string, string | undefined][]).filter(([, d]) => d);
+    const [kindLabel, date] = cands.find(([, d]) => Date.parse(d!) >= from && Date.parse(d!) <= to) ?? cands[0] ?? ['Cinema', r.releaseDate];
+    return { id: r.id, title: r.title, subtitle: r.year ? String(r.year) : undefined, date: date as string, hasFile: !!r.hasFile, kind: kindLabel };
   }
   return {
     id: r.id, title: r.series?.title ?? r.title,
@@ -76,15 +77,19 @@ function makeArr(kind: Kind): Plugin<Cfg, ArrData> {
     // library & missing counts are heavier — refresh every 10 polls
     if (ctx.tick % 10 === 1 || scratch.library === undefined) {
       const missing = await http.get<any>('/api/v3/wanted/missing', { query: { page: 1, pageSize: 1, monitored: true } }).then((r) => Number(r.totalRecords) || 0).catch(() => undefined);
-      const items = await http.get<any[]>(isRadarr ? '/api/v3/movie' : '/api/v3/series');
-      scratch.library = items.length;
-      scratch.missing = missing ?? (isRadarr ? items.filter((m) => m.monitored && !m.hasFile && m.isAvailable).length : 0);
+      // the full list can be tens of MB on a big library: a slow or oversized answer must not mark the service as down
+      const items = await http.get<any[]>(isRadarr ? '/api/v3/movie' : '/api/v3/series', { timeoutMs: 30_000 }).then((x) => (Array.isArray(x) ? x : null)).catch(() => null);
+      scratch.library = items?.length ?? scratch.library ?? 0;
+      scratch.missing = missing ?? (isRadarr && items ? items.filter((m) => m.monitored && !m.hasFile && m.isAvailable).length : scratch.missing ?? 0);
     }
+    if (!Array.isArray(calendar) || !Array.isArray(health) || !Array.isArray(disks) || !status || typeof status !== 'object')
+      throw new Error(`Unexpected answer from ${isRadarr ? 'Radarr' : 'Sonarr'} — check the URL and base path`);
+    const from = Date.parse(start), to = Date.parse(end);
     return finish({
       version: status.version,
       queue: (queue.records ?? []).map((r: any) => mapQueue(kind, r)),
       queueTotal: Number(queue.totalRecords) || 0,
-      calendar: calendar.map((r) => mapCalendar(kind, r)).filter((x) => x.date).sort((a, b) => a.date.localeCompare(b.date)),
+      calendar: calendar.map((r) => mapCalendar(kind, r, from, to)).filter((x) => x.date).sort((a, b) => a.date.localeCompare(b.date)),
       missing: scratch.missing, library: scratch.library,
       health: health.map((h) => ({ type: h.type, message: h.message, source: h.source })),
       disks: disks.map((d) => ({ path: d.path, label: d.label, free: d.freeSpace, total: d.totalSpace })),

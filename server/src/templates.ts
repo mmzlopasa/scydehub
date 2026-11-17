@@ -211,17 +211,17 @@ export function importTemplate(tpl: Template, opts: { createMissing: boolean; re
   const byPlugin = new Map<string, InstanceRow>();
   for (const i of listInstances()) if (!byPlugin.has(i.plugin)) byPlugin.set(i.plugin, i);
   const need = new Set(tpl.boards.flatMap((b) => b.widgets.map((w) => w.plugin).filter((p): p is string => !!p)));
-  for (const plugin of need) {
-    if (byPlugin.has(plugin)) continue;
-    if (!opts.createMissing) { res.missing.push(getPlugin(plugin)?.name ?? plugin); continue; }
-    const def = tpl.services?.find((s) => s.plugin === plugin);
-    // placeholders never carry secrets and never contact anything: they run in mock mode until edited
-    const safeConfig = Object.fromEntries(Object.entries(def?.config ?? {}).filter(([k]) => getPlugin(plugin)!.fields.some((f) => f.key === k && f.type !== 'secret')));
-    const row = createInstance({ plugin, name: def?.name ?? getPlugin(plugin)!.name, config: { url: 'http://example.invalid', ...safeConfig }, mock: true });
-    byPlugin.set(plugin, row);
-    res.created.push({ id: row.id, name: row.name, plugin });
-  }
   q.tx(() => {
+    for (const plugin of need) {
+      if (byPlugin.has(plugin)) continue;
+      if (!opts.createMissing) { res.missing.push(getPlugin(plugin)?.name ?? plugin); continue; }
+      const def = tpl.services?.find((s) => s.plugin === plugin);
+      // placeholders never carry secrets and never contact anything: they run in mock mode until edited
+      const safeConfig = Object.fromEntries(Object.entries(def?.config ?? {}).filter(([k]) => getPlugin(plugin)!.fields.some((f) => f.key === k && k !== 'url' && f.type !== 'secret')));
+      const row = createInstance({ plugin, name: def?.name ?? getPlugin(plugin)!.name, config: { ...safeConfig, url: 'http://example.invalid' }, mock: true });
+      byPlugin.set(plugin, row);
+      res.created.push({ id: row.id, name: row.name, plugin });
+    }
     if (opts.replace) q.run('DELETE FROM boards');
     let sort = q.get<{ m: number }>('SELECT COALESCE(MAX(sort), -1) + 1 m FROM boards')!.m;
     let t = Date.now();

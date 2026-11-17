@@ -3,10 +3,11 @@ import { get } from '../../lib/api';
 import { Badge } from '../../components/ui';
 import { dateTime } from '../../lib/format';
 import { PageHead, Card } from './Settings';
+import { fail } from '../../lib/fail';
 
 export function Audit() {
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { get('/api/audit?limit=500').then(setRows); }, []);
+  useEffect(() => { get('/api/audit?limit=500').then(setRows).catch(fail); }, []);
   return (
     <>
       <PageHead title="Audit log" desc="Every action, sign-in and configuration change, with user, IP address and result." />

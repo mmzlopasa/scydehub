@@ -52,7 +52,11 @@ export function uptimeBars(checkId: string, hours = 48) {
   );
   const hourly = q.all<{ b: number; t: number; o: number }>('SELECT ts b, total t, ok o FROM check_hourly WHERE check_id = ? AND ts >= ?', checkId, from);
   const map = new Map<number, { t: number; o: number }>();
-  for (const r of [...hourly, ...rows]) map.set(r.b, r); // raw wins when present
+  for (const r of hourly) map.set(r.b, r);
+  // raw results complete what is not rolled up yet; an hour that was rolled up stays as it is (its raw rows may be
+  // partly pruned already, which would distort the bar)
+  const lastHourly = hourly.reduce((m, r) => Math.max(m, r.b), 0);
+  for (const r of rows) if (!map.has(r.b) || r.b > lastHourly) map.set(r.b, r);
   return Array.from({ length: hours }, (_, i) => {
     const b = from + i * hour;
     const r = map.get(b);
@@ -85,7 +89,7 @@ export async function runCheck(row: CheckRow) {
   const next: CheckState = {
     id: row.id, name: row.name, type: row.type, target: row.target, ok: r.ok, latencyMs: r.latencyMs, message: r.message,
     checkedAt: now, statusSince: prev && prev.ok === r.ok ? prev.statusSince : now, extra: (r as any).extra,
-    enabled: true, instanceId: row.instance_id, uptime: uptime(row.id), recent: recent(row.id),
+    enabled: !!row.enabled, instanceId: row.instance_id, uptime: uptime(row.id), recent: recent(row.id),
   };
   states.set(row.id, next);
   bus.publish({ type: 'check', id: row.id, state: next });

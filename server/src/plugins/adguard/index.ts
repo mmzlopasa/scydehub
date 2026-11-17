@@ -6,7 +6,7 @@ export interface AdguardData {
   version?: string; protection: boolean; running: boolean; protectionDisabledUntil?: number | null;
   queries: number; blocked: number; blockedPct: number; avgMs: number;
   topDomains: [string, number][]; topBlocked: [string, number][]; topClients: [string, number][];
-  hourly: { queries: number[]; blocked: number[] };
+  hourly: { queries: number[]; blocked: number[]; unit?: 'hours' | 'days' };
 }
 
 const pairs = (arr: any[] | undefined, n = 8): [string, number][] =>
@@ -31,15 +31,19 @@ export const adguard: Plugin<Cfg, AdguardData> = {
   http: (c) => ({ headers: { Authorization: 'Basic ' + Buffer.from(`${c.username}:${c.password}`).toString('base64') } }),
   async collect({ http }) {
     const [status, stats] = await Promise.all([http.get<any>('/control/status'), http.get<any>('/control/stats')]);
+    if (typeof status?.protection_enabled !== 'boolean' || !stats || typeof stats !== 'object') throw new Error('Unexpected answer from AdGuard Home — check the URL');
     const queries = Number(stats.num_dns_queries) || 0;
+    // with a 7/30/90-day statistics interval the series are per day, not per hour
+    const perHour = (stats.time_units ?? 'hours') === 'hours';
+    const pausedMs = Number(status.protection_disabled_duration) || 0;
     const blocked = (Number(stats.num_blocked_filtering) || 0) + (Number(stats.num_replaced_safebrowsing) || 0) + (Number(stats.num_replaced_parental) || 0);
     return finish({
       version: status.version, protection: !!status.protection_enabled, running: !!status.running,
-      protectionDisabledUntil: status.protection_disabled_until ? new Date(status.protection_disabled_until).getTime() : null,
+      protectionDisabledUntil: pausedMs > 0 ? Date.now() + pausedMs : status.protection_disabled_until ? new Date(status.protection_disabled_until).getTime() : null,
       queries, blocked, blockedPct: queries ? Math.round((blocked / queries) * 1000) / 10 : 0,
       avgMs: Math.round((Number(stats.avg_processing_time) || 0) * 10000) / 10,
       topDomains: pairs(stats.top_queried_domains), topBlocked: pairs(stats.top_blocked_domains), topClients: pairs(stats.top_clients),
-      hourly: { queries: (stats.dns_queries ?? []).slice(-24), blocked: (stats.blocked_filtering ?? []).slice(-24) },
+      hourly: { queries: (stats.dns_queries ?? []).slice(perHour ? -24 : -30), blocked: (stats.blocked_filtering ?? []).slice(perHour ? -24 : -30), unit: perHour ? 'hours' : 'days' },
     });
   },
   mock(ctx) {

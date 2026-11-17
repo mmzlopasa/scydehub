@@ -8,6 +8,7 @@ import { FieldInput } from '../../components/FieldInput';
 import { confirmDialog, toast } from '../../components/feedback';
 import { ago } from '../../lib/format';
 import { PageHead, Card } from './Settings';
+import { fail } from '../../lib/fail';
 
 function InstanceForm({ plugin, instance, onClose }: { plugin: PluginMeta; instance?: Instance; onClose: () => void }) {
   const [name, setName] = useState(instance?.name ?? plugin.name);
@@ -25,13 +26,20 @@ function InstanceForm({ plugin, instance, onClose }: { plugin: PluginMeta; insta
     try {
       const r = await post('/api/instances/test', { plugin: plugin.id, config: cfg, id: instance?.id });
       setTest(r.ok ? { ok: true, text: `Working (${r.ms} ms) — ${r.summary ?? r.status}` } : { ok: false, text: r.error });
-    } catch (e: any) { setTest({ ok: false, text: e.message }); } finally { setBusy(false); }
+    } catch (e: any) { if (e.message !== 'Cancelled') setTest({ ok: false, text: e.message }); } finally { setBusy(false); }
   };
   const save = async () => {
     const missing = plugin.fields.filter((f) => f.required && !mock && (cfg[f.key] === undefined || cfg[f.key] === ''));
     if (missing.length) return toast(`Missing: ${missing.map((m) => m.label).join(', ')}`, 'bad');
+    if (!Number.isFinite(Number(interval)) || Number(interval) < 5) return toast('The interval must be at least 5 seconds', 'bad');
+    // an icon is a dashboard-icons name ("home-assistant"), an https image URL or an uploaded image
+    let iconValue = icon.trim();
+    if (iconValue && !/^(data:image\/|https:\/\/)/.test(iconValue)) {
+      if (/^http:\/\//i.test(iconValue)) return toast('Icon URLs must start with https://', 'bad');
+      iconValue = iconValue.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 64);
+    }
     try {
-      const display = { icon: icon || undefined, color: color || undefined };
+      const display = { icon: iconValue || undefined, color: color || undefined };
       // connection settings are only sent when they changed (changing them asks for your password)
       const configChanged = !instance || JSON.stringify(cfg) !== JSON.stringify({ ...Object.fromEntries(plugin.fields.filter((f) => f.default !== undefined).map((f) => [f.key, f.default])), ...(instance.config ?? {}) });
       if (instance) await patch(`/api/instances/${instance.id}`, { name, ...(configChanged ? { config: cfg } : {}), interval_sec: interval, mock, enabled, display });
@@ -52,7 +60,7 @@ function InstanceForm({ plugin, instance, onClose }: { plugin: PluginMeta; insta
         <p className="text-sm text-muted">{plugin.description} {plugin.docsUrl && <a className="inline-flex items-center gap-0.5 text-accent" href={plugin.docsUrl} target="_blank" rel="noreferrer">API docs<ExternalLink className="size-3" /></a>}</p>
         <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
           <Label><span className="text-xs font-medium text-muted">Name</span><Input value={name} onChange={(e) => setName(e.target.value)} /></Label>
-          <Label><span className="text-xs font-medium text-muted">Interval (s)</span><Input type="number" min={5} value={interval} onChange={(e) => setIntervalSec(Number(e.target.value))} /></Label>
+          <Label><span className="text-xs font-medium text-muted">Interval (s)</span><Input type="number" min={5} value={interval} onChange={(e) => setIntervalSec(e.target.value === '' ? ('' as any) : Number(e.target.value))} /></Label>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {plugin.fields.map((f) => <div key={f.key} className={cx(f.type === 'text' && 'sm:col-span-2')}><FieldInput field={f} value={cfg[f.key]} onChange={(v) => setCfg((s) => ({ ...s, [f.key]: v }))} /></div>)}
@@ -92,8 +100,7 @@ export function Services() {
 
   const remove = async (i: Instance) => {
     if (!(await confirmDialog({ title: `Delete ${i.name}?`, body: 'The service, its widgets and its state history will be deleted.', danger: true, confirmLabel: 'Delete' }))) return;
-    await del(`/api/instances/${i.id}`);
-    toast('Deleted');
+    try { await del(`/api/instances/${i.id}`); toast('Deleted'); } catch (e) { fail(e); }
   };
 
   return (

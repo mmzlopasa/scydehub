@@ -101,7 +101,7 @@ export default async function realtimeRoutes(app: FastifyInstance) {
     const onMsg = (m: BusMessage) => send(m);
     const ping = setInterval(() => {
       if (!stillValid(auth)) return end();
-      if (!closed) reply.raw.write(': ping\n\n');
+      if (!closed) reply.raw.write(`data: {"type":"ping","time":${Date.now()}}\n\n`) /* a data frame, so the client's watchdog sees it */;
     }, 20_000);
     send(hello());
     send(snapshot());

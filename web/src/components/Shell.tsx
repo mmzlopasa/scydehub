@@ -81,8 +81,8 @@ export function Shell({ children, profile, onProfile, onPalette }: { children: R
                 </NavLink>
               ))}
               {isAdmin && editMode && <IconButton title="New board" onClick={addBoard}><Plus className="size-4" /></IconButton>}
-              {h?.links.map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-panel-2 hover:text-fg">{l.name}<ExternalLink className="size-3" /></a>
+              {h?.links.map((l, i) => (
+                <a key={i} href={l.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-panel-2 hover:text-fg">{l.name}<ExternalLink className="size-3" /></a>
               ))}
             </nav>
             <div className="hidden items-center gap-1.5 lg:flex">

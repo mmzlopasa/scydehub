@@ -88,7 +88,12 @@ export function handleMessage(m: any) {
       const me = state.me;
       // a new server build → reload once (kiosk devices update themselves)
       if (me && m.buildId && me.buildId && m.buildId !== me.buildId) {
-        setTimeout(() => location.reload(), 1500 + Math.random() * 3000);
+        // never throw away an edit in progress: wait until nothing is being arranged and no dialog is open
+        const tryReload = () => {
+          if (state.editMode || document.querySelector('[role="dialog"]') || /^\/settings/.test(location.pathname)) setTimeout(tryReload, 5000);
+          else location.reload();
+        };
+        setTimeout(tryReload, 1500 + Math.random() * 3000);
       }
       break;
     }
@@ -111,8 +116,9 @@ export function handleMessage(m: any) {
     case 'config':
       // while the user is dragging a slider in Customize, a refetch would snap the value back
       if (m.scope === 'settings' && Date.now() < settingsHold) break;
-      void loadConfig(m.scope === 'checks' ? 'none' : m.scope);
-      if (m.scope === 'checks' || m.scope === 'all') void get('/api/state').then((st) => handleMessage({ type: 'snapshot', ...st }));
+      loadConfig(m.scope === 'checks' ? 'none' : m.scope).catch(() => {});
+      // a deleted service or check has to leave the live state too
+      if (['checks', 'instances', 'all'].includes(m.scope)) get('/api/state').then((st) => handleMessage({ type: 'snapshot', ...st })).catch(() => {});
       break;
   }
   setState({ lastMessageAt: Date.now() });

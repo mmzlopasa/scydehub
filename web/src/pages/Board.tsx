@@ -29,27 +29,36 @@ export function BoardView({ board, profile, editing, kiosk }: { board: BoardT; p
   // phones always stack; everywhere else the user decides
   const free = (lay?.mode ?? 'free') === 'free' && profile !== 'mobile';
   const overlap = free && !!lay?.allowOverlap;
-  const layout = useMemo(
-    () => resolveLayout(board.widgets, board.layouts[profile], profile, board.layouts.desktop ?? board.layouts.tv ?? board.layouts.tablet),
-    [board, profile],
-  );
+  const layout = useMemo(() => {
+    // no layout for this device yet: start from another device's, scaled from that device's column count
+    const from = (['desktop', 'tv', 'tablet'] as Profile[]).find((p) => Array.isArray(board.layouts[p]));
+    return resolveLayout(board.widgets, board.layouts[profile], profile, from ? board.layouts[from] : undefined, from ? GRID[from].cols : 24);
+  }, [board, profile]);
   const [local, setLocal] = useState(layout);
   useEffect(() => setLocal(layout), [layout]);
   const saveTimer = useRef<number>();
-  useEffect(() => () => clearTimeout(saveTimer.current), []);
+  const pending = useRef<(() => void) | null>(null);
+  const localRef = useRef(local);
+  localRef.current = local;
+  // leaving the board right after a drop must not lose the move: send what is still waiting
+  useEffect(() => () => { clearTimeout(saveTimer.current); pending.current?.(); }, []);
 
-  const persist = useCallback((l: Layout[]) => {
+  const persist = useCallback((l: Layout[], force = false) => {
     const clean = l.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+    // a plain click also ends a "drag": nothing moved, nothing to save
+    const cur = localRef.current;
+    if (!force && clean.length === cur.length && clean.every((c) => { const o = cur.find((x) => x.i === c.i); return o && o.x === c.x && o.y === c.y && o.w === c.w && o.h === c.h; })) return;
     setLocal(clean);
     clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      put(`/api/boards/${board.id}/layout/${profile}`, { layout: clean }).catch((e) => toast(e.message, 'bad'));
-    }, 350);
+    const send = () => { pending.current = null; put(`/api/boards/${board.id}/layout/${profile}`, { layout: clean }).catch((e) => toast(e.message, 'bad')); };
+    pending.current = send;
+    saveTimer.current = window.setTimeout(send, 350);
   }, [board.id, profile]);
+  const coarse = useMemo(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches, []);
 
   // first time a device is arranged: store the auto-placed layout so positions become stable
   useEffect(() => {
-    if (editing && isAdmin && !board.layouts[profile] && layout.length) persist(layout as Layout[]);
+    if (editing && isAdmin && !board.layouts[profile] && layout.length) persist(layout as Layout[], true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
@@ -91,7 +100,7 @@ export function BoardView({ board, profile, editing, kiosk }: { board: BoardT; p
             className={cx('inline-flex h-8 items-center gap-1.5 rounded-full px-3 font-medium transition disabled:opacity-40', overlap ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg')}><Layers className="size-3.5" />Overlap</button>
           <span className="mx-1 h-5 w-px bg-line-2" />
           <button title="Re-arrange automatically on this device" onClick={resetLayout} className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 font-medium text-muted transition hover:text-fg"><RotateCcw className="size-3.5" />Reset</button>
-          <span className="px-2 text-muted max-sm:hidden">Drag anywhere · resize from any edge · layout saved for: <b className="text-fg">{profile}</b></span>
+          <span className="px-2 text-muted max-sm:hidden">{coarse ? 'Drag by the grip' : 'Drag anywhere'} · resize from any edge · layout saved for: <b className="text-fg">{profile}</b></span>
         </div>
       )}
       {board.widgets.length === 0 ? (
@@ -122,6 +131,7 @@ export function BoardView({ board, profile, editing, kiosk }: { board: BoardT; p
             useCSSTransforms
             resizeHandles={HANDLES}
             draggableCancel=".no-drag"
+            draggableHandle={coarse ? '.drag-handle' : undefined}
           >
             {local.map((l, idx) => {
               const w = byId.get(l.i);

@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
-import { AlertTriangle, Copy, Settings2, Trash2, FlaskConical } from 'lucide-react';
+import { AlertTriangle, Copy, Settings2, Trash2, FlaskConical, GripVertical } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { ago } from '../lib/format';
 import { componentFor, coreDef } from '../widgets/registry';
@@ -106,6 +106,8 @@ function WidgetFrameInner({ w, cols, rows, gridCols, tv, editing, still, onOpen,
           {state && <StatusDot status={state.status} pulse={down} />}
         </div>
       )}
+      {/* touch screens drag by this grip only, so the page can still be scrolled with a finger */}
+      {editing && <div className="drag-handle pop absolute left-2 top-2 z-10 hidden size-8 place-items-center rounded-full text-muted [@media(pointer:coarse)]:grid" title="Drag to move"><GripVertical className="size-4" /></div>}
       {editing && (
         <div className="pop absolute right-2 top-2 z-10 flex gap-0.5 rounded-full p-0.5" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
           <button className={btn} title="Widget settings" onClick={(e) => { e.stopPropagation(); onEdit?.(); }}><Settings2 className="size-4" /></button>
@@ -119,7 +121,7 @@ function WidgetFrameInner({ w, cols, rows, gridCols, tv, editing, still, onOpen,
         </div>
       )}
       <div className={cx('min-h-0 flex-1 overflow-hidden', o.noPadding ? '' : 'px-5 pb-5', !showHeader && !o.noPadding && 'pt-5', editing && 'pointer-events-none select-none')}>
-        <ErrorBoundary>{body}</ErrorBoundary>
+        <ErrorBoundary resetKey={state?.updatedAt}>{body}</ErrorBoundary>
       </div>
     </div>
   );

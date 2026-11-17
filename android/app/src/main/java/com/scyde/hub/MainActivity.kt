@@ -33,7 +33,8 @@ class MainActivity : Activity() {
 
     private val retry = object : Runnable {
         override fun run() {
-            if (failed) web.reload()
+            // not reload(): after a failed first load the WebView is on its error page, so load the Hub again
+            if (failed) web.loadUrl(prefs.kioskUrl())
         }
     }
 
@@ -158,7 +159,10 @@ class MainActivity : Activity() {
             // stay inside the Hub (same scheme, host and port); everything else is ignored on a kiosk
             val hub = android.net.Uri.parse(prefs.url)
             val u = request.url
-            return !(u.scheme == hub.scheme && u.host == hub.host && port(u) == port(hub))
+            if (u.host != hub.host) return true
+            if (u.scheme == hub.scheme && port(u) == port(hub)) return false
+            // the Hub (or the proxy in front of it) upgrading http → https on the same host is fine
+            return !(hub.scheme == "http" && u.scheme == "https")
         }
     }
 
@@ -185,7 +189,13 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (::web.isInitialized) web.loadUrl(prefs.kioskUrl())
+        if (!::web.isInitialized) return
+        // Settings were saved. Loading the same page with only a different #token would not reload it, so the page
+        // would keep the old token: start from a blank page and drop the history first.
+        failed = false
+        handler.removeCallbacks(retry)
+        web.loadUrl("about:blank")
+        web.post { web.clearHistory(); web.loadUrl(prefs.kioskUrl()) }
     }
 
     override fun onDestroy() {

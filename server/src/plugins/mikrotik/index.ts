@@ -44,6 +44,7 @@ async function collect(ctx: PluginContext<Cfg>) {
     http.get<any[]>('/rest/ip/dhcp-server/lease').catch(() => []),
     http.get<any[]>('/rest/interface/wireguard/peers').catch(() => []),
   ]);
+  if (!res || typeof res !== 'object' || !Array.isArray(ifaces)) throw new Error('Unexpected answer from RouterOS — is the REST API (www-ssl / www service) enabled?');
   const now = Date.now();
   const prev: Record<string, { rx: number; tx: number; t: number }> = scratch.prev ?? {};
   const next: typeof prev = {};
@@ -63,7 +64,7 @@ async function collect(ctx: PluginContext<Cfg>) {
     });
   scratch.prev = next;
   const wanI = c.wanInterface ? list.find((i) => i.name === c.wanInterface) : undefined;
-  return finish({
+  const out = finish({
     board: res['board-name'], version: res.version, uptime: res.uptime, cpu: Number(res['cpu-load']) || 0,
     memTotal: Number(res['total-memory']) || 0, memUsed: (Number(res['total-memory']) || 0) - (Number(res['free-memory']) || 0),
     wan: wanI ? { name: wanI.name, running: wanI.running, rxBps: wanI.rxBps, txBps: wanI.txBps } : null,
@@ -78,6 +79,9 @@ async function collect(ctx: PluginContext<Cfg>) {
       };
     }),
   });
+  // a mistyped interface name would otherwise switch the WAN alert off without a word
+  if (c.wanInterface && !wanI) (out.alerts as any[]).push({ key: 'wan:cfg', severity: 'warning', message: `WAN interface "${c.wanInterface}" was not found on the router` });
+  return out;
 }
 
 export const mikrotik: Plugin<Cfg, MtData> = {

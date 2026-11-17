@@ -10,6 +10,7 @@ export const SECRET_PLACEHOLDER = '__unchanged__';
 export const MIN_INTERVAL = 5;
 export const MAX_INTERVAL = 86_400;
 export const clampInterval = (v: unknown, fallback: number) => {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return fallback;
   const n = Math.round(Number(v));
   return Number.isFinite(n) ? Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, n)) : fallback;
 };

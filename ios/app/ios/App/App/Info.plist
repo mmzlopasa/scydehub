@@ -73,9 +73,8 @@
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!-- The Hub often runs on the LAN over plain HTTP -->
+		<!-- (NSAllowsLocalNetworking must NOT be added here: on iOS 10+ its presence switches NSAllowsArbitraryLoads off) -->
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>

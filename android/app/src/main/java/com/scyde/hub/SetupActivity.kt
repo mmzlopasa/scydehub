@@ -37,7 +37,9 @@ class SetupActivity : Activity() {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
         val url = field("http://192.168.1.50:8484 or https://hub.example.com", prefs.url, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        val token = field("sk_…", prefs.token, InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+        // a saved token is never shown again (anyone with the remote can open this screen): empty = keep it
+        val hasToken = prefs.token.isNotBlank()
+        val token = field(if (hasToken) "Saved — leave empty to keep it" else "Kiosk token", "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val profiles = arrayOf("tv" to "TV (larger text, for a remote)", "tablet" to "Tablet", "desktop" to "Monitor")
         val profileGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
         profiles.forEachIndexed { i, (id, l) ->
@@ -56,15 +58,30 @@ class SetupActivity : Activity() {
             setOnClickListener {
                 val u = url.text.toString().trim().trimEnd('/')
                 if (!u.startsWith("http://") && !u.startsWith("https://")) { url.error = "URL must start with http:// or https://"; return@setOnClickListener }
-                if (token.text.isBlank()) { token.error = "Enter the kiosk token"; return@setOnClickListener }
+                val newToken = token.text.toString().trim()
+                if (newToken.isEmpty() && !hasToken) { token.error = "Enter the kiosk token"; return@setOnClickListener }
+                if (newToken.isNotEmpty() && !Regex("^[A-Za-z0-9_.~-]{8,200}$").matches(newToken)) { token.error = "That does not look like a kiosk token"; return@setOnClickListener }
                 // a new address or a re-save means a new certificate may be pinned
                 prefs.pinnedCert = ""
                 prefs.url = u
-                prefs.token = token.text.toString()
+                if (newToken.isNotEmpty() && !prefs.saveToken(newToken)) {
+                    Toast.makeText(this@SetupActivity, "This device could not store the token securely. Restart the device and try again.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
                 prefs.profile = profiles[(profileGroup.checkedRadioButtonId - 1000).coerceIn(0, profiles.size - 1)].first
                 prefs.autostart = autostart.isChecked
                 prefs.acceptSelfSigned = selfSigned.isChecked
                 prefs.showWhenLocked = overLock.isChecked
+                // Android 10+ only lets an app open itself after boot when it may draw over other apps
+                if (autostart.isChecked && android.os.Build.VERSION.SDK_INT >= 29 && !android.provider.Settings.canDrawOverlays(this@SetupActivity)) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                        Toast.makeText(this@SetupActivity, "Allow \"Display over other apps\" so SCYDE Hub can start after boot, then press Save again.", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    } catch (_: Exception) {
+                        Toast.makeText(this@SetupActivity, "Autostart needs \"Display over other apps\": enable it for SCYDE Hub in the system settings.", Toast.LENGTH_LONG).show()
+                    }
+                }
                 startActivity(Intent(this@SetupActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK))
                 finish()
             }

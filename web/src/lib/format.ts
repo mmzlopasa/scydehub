@@ -3,7 +3,7 @@ let _locale = 'en-GB';
 let _hour12 = false;
 export const locale = () => _locale;
 export function setLocale(l?: string, hour12?: boolean) {
-  if (l) _locale = l;
+  if (l) try { new Intl.DateTimeFormat(l); _locale = l; } catch { /* not a locale this browser knows: keep the old one */ }
   if (hour12 !== undefined) _hour12 = hour12;
 }
 const hc = () => ({ hour12: _hour12 });
@@ -61,7 +61,8 @@ export const dateLong = (ts: number | string) => new Date(ts).toLocaleDateString
 export const weekday = (ts: number | string) => new Date(ts).toLocaleDateString(_locale, { weekday: 'short' });
 export const dateTime = (ts: number | string) => new Date(ts).toLocaleString(_locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', ...hc() });
 export function dayLabel(ts: number | string) {
-  const d = new Date(ts); const n = new Date();
+  // a bare date ("2026-11-20") would be read as midnight UTC and land on the previous day west of Greenwich
+  const d = new Date(typeof ts === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ts) ? ts + 'T12:00' : ts); const n = new Date();
   const diff = Math.round((new Date(d.toDateString()).getTime() - new Date(n.toDateString()).getTime()) / 86400_000);
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Tomorrow';

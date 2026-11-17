@@ -6,6 +6,7 @@ import { Badge, Button, Input, Label, Modal, StatusDot, Toggle, inputCls } from 
 import { confirmDialog, toast } from '../../components/feedback';
 import { CheckDetails } from '../../components/DetailPanel';
 import { PageHead, Card } from './Settings';
+import { fail } from '../../lib/fail';
 
 const TYPES = [
   { v: 'ping', l: 'Ping (ICMP)', target: 'Host or IP', ph: '192.168.1.10' },
@@ -22,11 +23,15 @@ function CheckForm({ check, onClose }: { check?: any; onClose: () => void }) {
   const setO = (k: string, v: any) => setF((s: any) => ({ ...s, options: { ...s.options, [k]: v } }));
   const t = TYPES.find((x) => x.v === f.type)!;
   const save = async () => {
-    if (!f.name || !f.target) return toast('Name and target are required', 'bad');
+    if (!f.name.trim() || !f.target.trim()) return toast('Name and target are required', 'bad');
+    const interval = Number(f.interval_sec);
+    if (!Number.isFinite(interval) || interval < 10) return toast('The interval must be at least 10 seconds', 'bad');
+    // empty option fields are left out so the probe uses its defaults (an empty DNS record type would never resolve)
+    const options = Object.fromEntries(Object.entries(f.options ?? {}).filter(([, v]) => v !== '' && v !== undefined && v !== null));
     try {
-      if (check) await patch(`/api/checks/${check.id}`, f); else await post('/api/checks', f);
+      if (check) await patch(`/api/checks/${check.id}`, { ...f, options }); else await post('/api/checks', { ...f, options });
       toast('Saved'); onClose();
-    } catch (e: any) { toast(e.message, 'bad'); }
+    } catch (e: any) { fail(e); }
   };
   return (
     <Modal open onClose={onClose} title={check ? 'Edit check' : 'New check'} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
@@ -42,7 +47,7 @@ function CheckForm({ check, onClose }: { check?: any; onClose: () => void }) {
             <Toggle checked={!!o.insecure} onChange={(v) => setO('insecure', v)} label="Accept self-signed (this check only)" />
           </div>
         )}
-        {f.type === 'ssl' && <Label><span className="text-xs font-medium text-muted">Warn when expiring within (days)</span><Input type="number" value={o.warnDays ?? 14} onChange={(e) => setO('warnDays', Number(e.target.value))} /></Label>}
+        {f.type === 'ssl' && <Label><span className="text-xs font-medium text-muted">Warn when expiring within (days)</span><Input type="number" value={o.warnDays ?? 14} onChange={(e) => setO('warnDays', e.target.value === '' ? '' : Number(e.target.value))} /></Label>}
         {f.type === 'dns' && (
           <div className="grid gap-3 sm:grid-cols-3">
             <Label><span className="text-xs font-medium text-muted">DNS server</span><Input value={o.server ?? ''} placeholder="192.168.1.2" onChange={(e) => setO('server', e.target.value)} /></Label>
@@ -51,7 +56,7 @@ function CheckForm({ check, onClose }: { check?: any; onClose: () => void }) {
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Label><span className="text-xs font-medium text-muted">Interval (s)</span><Input type="number" min={10} value={f.interval_sec} onChange={(e) => setF({ ...f, interval_sec: Number(e.target.value) })} /></Label>
+          <Label><span className="text-xs font-medium text-muted">Interval (s)</span><Input type="number" min={10} value={f.interval_sec} onChange={(e) => setF({ ...f, interval_sec: e.target.value === '' ? '' : Number(e.target.value) })} /></Label>
           <Label><span className="text-xs font-medium text-muted">Link to service</span>
             <select className={inputCls} value={f.instance_id ?? ''} onChange={(e) => setF({ ...f, instance_id: e.target.value || null })}><option value="">— standalone —</option>{instances.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
           </Label>
@@ -67,7 +72,7 @@ export function Checks() {
   const [rows, setRows] = useState<any[]>([]);
   const [edit, setEdit] = useState<any | null | undefined>(undefined);
   const [open, setOpen] = useState<string | null>(null);
-  const load = () => get('/api/checks').then(setRows);
+  const load = () => get('/api/checks').then(setRows).catch(fail);
   const idsKey = Object.keys(states).sort().join(',');
   useEffect(() => { void load(); }, [idsKey]);
   return (
@@ -83,12 +88,12 @@ export function Checks() {
                 <StatusDot status={s?.ok ?? null} />
                 <button className="min-w-0 flex-1 text-left" onClick={() => setOpen(open === c.id ? null : c.id)}>
                   <div className="flex items-center gap-2 font-medium">{c.name}<Badge>{c.type.toUpperCase()}</Badge>{!c.enabled && <Badge>disabled</Badge>}</div>
-                  <div className="truncate text-xs text-muted">{c.target} · {s?.message ?? '—'} · 24 h: {s?.uptime?.d1 ?? '—'}%</div>
+                  <div className="truncate text-xs text-muted">{c.target} · {s?.message ?? '—'} · 24 h: {s?.uptime?.d1 != null ? `${s.uptime.d1}%` : '—'}</div>
                 </button>
                 <span className="num text-sm">{s?.latencyMs != null ? `${Math.round(s.latencyMs)} ms` : ''}</span>
-                <Button size="sm" variant="ghost" icon={<Play className="size-3.5" />} onClick={() => post(`/api/checks/${c.id}/run`).then(() => toast('Check started'))} />
+                {c.enabled && <Button size="sm" variant="ghost" title="Run now" icon={<Play className="size-3.5" />} onClick={() => post(`/api/checks/${c.id}/run`).then((r) => toast(r?.ok ? `Passed${r.latencyMs != null ? ` (${Math.round(r.latencyMs)} ms)` : ''}` : `Failed: ${r?.message ?? 'no answer'}`, r?.ok ? 'ok' : 'bad')).catch(fail)} />}
                 <Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEdit(c)} />
-                <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete ${c.name}?`, danger: true, confirmLabel: 'Delete' })) { await del(`/api/checks/${c.id}`); load(); } }} />
+                <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete ${c.name}?`, danger: true, confirmLabel: 'Delete' })) { await del(`/api/checks/${c.id}`).catch(fail); load(); } }} />
               </div>
               {open === c.id && s && <div className="mt-3"><CheckDetails c={s} /></div>}
             </Card>

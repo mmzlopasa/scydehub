@@ -36,6 +36,7 @@ export const prowlarr: Plugin<Cfg, ProwlarrData> = {
       http.get<any>('/api/v1/indexerstats').catch(() => ({ indexers: [] })),
       http.get<any[]>('/api/v1/health'),
     ]);
+    if (!Array.isArray(indexers) || !Array.isArray(statuses) || !Array.isArray(health)) throw new Error('Unexpected answer from Prowlarr — check the URL and base path');
     const st = new Map(statuses.map((s) => [s.indexerId, s]));
     const sx = new Map((stats.indexers ?? []).map((s: any) => [s.indexerId, s]));
     const list: ProwlarrIndexer[] = indexers.map((i) => {
@@ -67,7 +68,16 @@ export const prowlarr: Plugin<Cfg, ProwlarrData> = {
     });
   },
   actions: [
-    { id: 'testAll', label: 'Test all indexers', run: async ({ http }) => { await http.post('/api/v1/indexer/testall', {}); return 'Test started'; } },
+    { id: 'testAll', label: 'Test all indexers', run: async ({ http }) => {
+      // Prowlarr answers 400 with the full result list when any indexer fails: that is a result, not an error
+      const r = await http.raw('/api/v1/indexer/testall', { method: 'POST', body: {}, timeoutMs: 90_000 });
+      if (r.status !== 200 && r.status !== 400) throw new Error(`HTTP ${r.status}`);
+      let res: any[] = [];
+      try { res = JSON.parse(r.text || '[]'); } catch { /* no list */ }
+      if (!Array.isArray(res) || !res.length) return 'Test finished';
+      const bad = res.filter((x) => x && x.isValid === false).length;
+      return bad ? `${res.length - bad}/${res.length} indexers passed, ${bad} failing` : `All ${res.length} indexers passed`;
+    } },
   ],
   widgets: [
     { id: 'indexers', name: 'Prowlarr indexers', description: 'Indexer status and statistics', sizes: ['S', 'M', 'L'], defaultSize: 'M' },

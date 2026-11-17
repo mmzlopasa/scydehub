@@ -1,6 +1,19 @@
 # Rendered by the nginx image (envsubst) from DOMAIN.
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 
+# Docker's DNS, re-resolved: the Hub container gets a new address when it is recreated (update), and nginx
+# would otherwise keep talking to the old one until restarted.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+# Requests for any other host name (scanners hitting the IP address) get no answer and no certificate.
+server {
+    listen 80 default_server;
+    listen 443 ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+    return 444;
+}
+
 server {
     listen 80;
     server_name ${DOMAIN};
@@ -30,8 +43,10 @@ server {
     # LAN / VPN allowlist (generated from ALLOW_CIDRS at container start)
     include /etc/nginx/conf.d/allowlist.inc;
 
+    set $hub http://hub:8484;
+
     location / {
-        proxy_pass http://hub:8484;
+        proxy_pass $hub;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -49,6 +64,7 @@ server {
     # health endpoint stays reachable for the external heartbeat even with an allowlist
     location = /healthz {
         allow all;
-        proxy_pass http://hub:8484;
+        proxy_pass $hub;
+        proxy_set_header Host $host;
     }
 }

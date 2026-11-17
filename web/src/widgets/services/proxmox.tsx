@@ -1,6 +1,6 @@
 import { Box, Monitor, Play, Power, RotateCw, Square, HardDrive, Archive, Camera } from 'lucide-react';
 import type { WidgetProps } from '../types';
-import { Badge, Progress, Ring, StatusDot, cx } from '../../components/ui';
+import { Badge, Empty, Progress, Ring, StatusDot, cx } from '../../components/ui';
 import { Sparkline } from '../../components/charts';
 import { bytes, duration, ago, pct, ratio } from '../../lib/format';
 import { runAction, useMetricSeries } from '../../lib/hooks';
@@ -11,7 +11,7 @@ export function ProxmoxSummary({ data, size, state }: WidgetProps) {
   const cpu = n ? n.cpu * 100 : 0;
   const mem = n ? ratio(n.mem, n.maxmem) : 0;
   const cpuSeries = useMetricSeries(state?.id, 'cpu', state?.metrics?.cpu);
-  if (!n) return null;
+  if (!n) return <Empty title="No node data yet" />;
   const running = data.guests.filter((g: any) => g.status === 'running').length;
   if (size === 'S')
     return (
@@ -23,10 +23,10 @@ export function ProxmoxSummary({ data, size, state }: WidgetProps) {
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center gap-4">
-        <Ring value={cpu} label={`${Math.round(cpu)}%`} sub="CPU" size={size === 'L' ? 92 : 76} />
-        <Ring value={mem} label={`${Math.round(mem)}%`} sub="RAM" size={size === 'L' ? 92 : 76} />
+        <Ring value={cpu} label={`${Math.round(cpu)}%`} sub="CPU" size={(size === 'L' || size === 'XL') ? 92 : 76} />
+        <Ring value={mem} label={`${Math.round(mem)}%`} sub="RAM" size={(size === 'L' || size === 'XL') ? 92 : 76} />
         <div className="min-w-0 flex-1 space-y-1 text-xs">
-          <div className="flex justify-between gap-2"><span className="text-muted">Load</span><span className="num">{n.loadavg.map((l: number) => l.toFixed(2)).join(' · ')}</span></div>
+          <div className="flex justify-between gap-2"><span className="text-muted">Load</span><span className="num">{(n.loadavg ?? []).map((l: number) => Number(l).toFixed(2)).join(' · ')}</span></div>
           <div className="flex justify-between gap-2"><span className="text-muted">Uptime</span><span className="num">{duration(n.uptime)}</span></div>
           <div className="flex justify-between gap-2"><span className="text-muted">Guests</span><span className="num">{running}/{data.guests.length}</span></div>
           {n.temperature != null && <div className="flex justify-between gap-2"><span className="text-muted">Temp</span><span className="num">{n.temperature}°C</span></div>}
@@ -62,7 +62,7 @@ function GuestActions({ g, instanceId }: { g: any; instanceId: string }) {
 }
 
 export function ProxmoxGuests({ data, size, instance }: WidgetProps) {
-  const guests = [...(data?.guests ?? [])].filter((g: any) => !g.template).sort((a: any, b: any) => (a.status === b.status ? a.vmid - b.vmid : a.status === 'running' ? -1 : 1));
+  const guests = [...(data?.guests ?? [])].filter((g: any) => !g.template).sort((a: any, b: any) => Number(b.status === 'running') - Number(a.status === 'running') || String(a.status).localeCompare(String(b.status)) || a.vmid - b.vmid);
   const wide = size === 'L' || size === 'XL';
   return (
     <List>
@@ -106,7 +106,9 @@ export function ProxmoxGuests({ data, size, instance }: WidgetProps) {
 }
 
 export function ProxmoxStorage({ data, size }: WidgetProps) {
-  const st = (data?.storage ?? []).filter((s: any) => s.total > 0);
+  // shared storage is reported by every node: show it once
+  const seen = new Set<string>();
+  const st = (data?.storage ?? []).filter((s: any) => s.total > 0 && !(s.shared && seen.has(s.storage)) && (s.shared ? !!seen.add(s.storage) : true));
   return (
     <div className="flex h-full flex-col gap-3">
       <List>

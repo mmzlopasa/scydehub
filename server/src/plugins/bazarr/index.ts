@@ -37,10 +37,11 @@ export const bazarr: Plugin<Cfg, BazarrData> = {
       http.get<any>('/api/episodes/history', { query: { start: 0, length: 8 } }).catch(() => ({ data: [] })),
       http.get<any>('/api/movies/history', { query: { start: 0, length: 8 } }).catch(() => ({ data: [] })),
     ]);
+    if (!badges || typeof badges !== 'object' || !('episodes' in badges || 'movies' in badges)) throw new Error('Unexpected answer from Bazarr — check the URL, base path and API key');
     const history = [
       ...(eh.data ?? []).map((h: any) => ({ title: h.seriesTitle, subtitle: `${h.episode_number ?? ''} ${h.episodeTitle ?? ''}`.trim(), language: h.language?.name ?? h.language, provider: h.provider, timestamp: h.parsed_timestamp ?? h.timestamp, action: h.action })),
       ...(mh.data ?? []).map((h: any) => ({ title: h.title, language: h.language?.name ?? h.language, provider: h.provider, timestamp: h.parsed_timestamp ?? h.timestamp, action: h.action })),
-    ].slice(0, 12);
+    ].sort((a, b) => (Date.parse(b.timestamp) || 0) - (Date.parse(a.timestamp) || 0)).slice(0, 12); // newest first across episodes and movies
     return finish({
       version: status.data?.bazarr_version, wantedEpisodes: Number(badges.episodes) || 0, wantedMovies: Number(badges.movies) || 0,
       throttledProviders: Number(badges.providers) || 0, providers: (providers.data ?? []).map((p: any) => ({ name: p.name, status: p.status, retry: p.retry })),

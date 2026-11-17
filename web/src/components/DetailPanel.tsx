@@ -8,6 +8,7 @@ import type { CheckState, Field } from '../lib/types';
 import { AreaChart, UptimeBar } from './charts';
 import { Badge, Button, Drawer, Segmented, ServiceIcon, StatusDot, statusLabel, cx } from './ui';
 import { FieldInput } from './FieldInput';
+import { toast } from './feedback';
 import { metricFormat, metricLabel } from '../lib/metrics';
 
 const RANGES = [
@@ -32,13 +33,16 @@ function MetricCharts({ instanceId, metrics, hours }: { instanceId: string; metr
 }
 
 function ActionForm({ instanceId, action }: { instanceId: string; action: { id: string; label: string; description?: string; danger: boolean; params: Field[] } }) {
-  const [vals, setVals] = useState<Record<string, any>>(Object.fromEntries(action.params.map((p) => [p.key, p.default ?? ''])));
+  // a select shows its first option when nothing is chosen: send what is shown
+  const [vals, setVals] = useState<Record<string, any>>(Object.fromEntries(action.params.map((p) => [p.key, p.default ?? (p.type === 'select' ? p.options?.[0]?.value ?? '' : p.type === 'boolean' ? false : '')])));
+  const missing = action.params.some((p) => p.required && (vals[p.key] === '' || vals[p.key] == null));
+  const send = () => runAction(instanceId, action.id, Object.fromEntries(Object.entries(vals).filter(([, v]) => v !== '' && v != null)));
   return (
     <div className="rounded-2xl border border-line p-3">
       <div className="flex items-center gap-2">
         <Zap className={cx('size-4', action.danger ? 'text-bad' : 'text-accent')} />
         <div className="flex-1"><div className="text-sm font-medium">{action.label}</div>{action.description && <div className="text-xs text-muted">{action.description}</div>}</div>
-        <Button size="sm" variant={action.danger ? 'danger' : 'soft'} onClick={() => runAction(instanceId, action.id, vals)}>Run</Button>
+        <Button size="sm" variant={action.danger ? 'danger' : 'soft'} disabled={missing} title={missing ? 'Fill in the required fields first' : undefined} onClick={send}>Run</Button>
       </div>
       {action.params.length > 0 && (
         <div className="mt-3 grid gap-2 sm:grid-cols-3">{action.params.map((f) => <FieldInput key={f.key} field={f} value={vals[f.key]} onChange={(v) => setVals((s) => ({ ...s, [f.key]: v }))} compact />)}</div>
@@ -78,6 +82,8 @@ export function DetailPanel({ instanceId, onClose }: { instanceId: string | null
   const [hours, setHours] = useState('6');
   const [tab, setTab] = useState<'overview' | 'actions' | 'alerts'>('overview');
   const [refreshing, setRefreshing] = useState(false);
+  // the panel stays mounted: a new service starts on its first tab, not on whatever the last one showed
+  useEffect(() => { setTab('overview'); setRefreshing(false); }, [instanceId]);
   if (!instanceId) return null;
   const metricKeys = Object.keys(state?.metrics ?? {}).filter((k) => !/^g\d+_/.test(k) && !k.startsWith('disk_')).slice(0, 8);
   const allMetrics = ['_latency', ...metricKeys];
@@ -98,7 +104,7 @@ export function DetailPanel({ instanceId, onClose }: { instanceId: string | null
           {tab === 'overview' && <Segmented size="sm" value={hours} onChange={setHours} options={RANGES.map((r) => ({ ...r }))} />}
           {isAdmin && (
             <Button size="sm" variant="ghost" loading={refreshing} icon={<RefreshCw className="size-3.5" />}
-              onClick={() => { setRefreshing(true); post(`/api/instances/${instanceId}/refresh`).finally(() => setRefreshing(false)); }}>Refresh</Button>
+              onClick={() => { setRefreshing(true); post(`/api/instances/${instanceId}/refresh`).catch((e) => toast(e?.message ?? 'Refresh failed', 'bad')).finally(() => setRefreshing(false)); }}>Refresh</Button>
           )}
         </div>
       </div>
@@ -127,7 +133,7 @@ export function DetailPanel({ instanceId, onClose }: { instanceId: string | null
       {tab === 'actions' && plugin && (
         <div className="space-y-2">
           <div className="text-xs text-muted">Every action asks for confirmation and is recorded in the audit log.</div>
-          {plugin.actions.map((a) => <ActionForm key={a.id} instanceId={instanceId} action={a} />)}
+          {plugin.actions.map((a) => <ActionForm key={`${instanceId}:${a.id}`} instanceId={instanceId} action={a} />)}
         </div>
       )}
 

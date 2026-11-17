@@ -33,6 +33,7 @@ export const immich: Plugin<Cfg, ImmichData> = {
       http.get<any>('/api/server/statistics'),
       http.get<any>('/api/server/storage').catch(() => null),
     ]);
+    if (!stats || typeof stats !== 'object' || !('photos' in stats || 'usage' in stats)) throw new Error('Unexpected answer from Immich — check the URL and API key');
     // v2.4+: /api/queues; older: /api/jobs (deprecated)
     let queues: ImmichData['queues'] = [];
     const q = await http.get<any[]>('/api/queues').catch(() => null);

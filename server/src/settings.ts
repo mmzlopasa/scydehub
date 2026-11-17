@@ -80,6 +80,18 @@ const IMAGE_FIELDS = new Set(['logo', 'favicon', 'backgroundImage']);
 const COLOR_FIELDS = new Set(['accent', 'accent2', 'okColor', 'warnColor', 'badColor', 'backgroundColor']);
 const isImageRef = (v: string) => v === '' || /^https:\/\/[^\s"'<>]+$/.test(v) || /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(v);
 
+/** allowed range per numeric key (anything else: 0 … 1e13) */
+const RANGES: Record<string, [number, number]> = {
+  backgroundDim: [0, 1], blur: [0, 60], cardOpacity: [0, 1], radius: [0, 60], fontScale: [0.6, 1.8], gap: [0, 60], maxWidth: [0, 10_000],
+  rotationSec: [0, 86_400], pauseOnInteractSec: [0, 86_400], level: [0, 1], intervalSec: [10, 86_400], lat: [-90, 90], lon: [-180, 180],
+};
+const ENUMS: Record<string, string[]> = {
+  theme: ['dark', 'light', 'oled'], background: ['planet', 'aurora', 'grid', 'solid', 'image'], font: ['sora', 'inter', 'geist', 'system'],
+  numberFont: ['doto', 'sans', 'mono'], density: ['comfortable', 'compact'], animations: ['full', 'reduced', 'off'],
+  headerStyle: ['floating', 'bar', 'hidden'], mode: ['free', 'pack'], tempUnit: ['c', 'f'],
+};
+const validLocale = (l: string) => { try { new Intl.DateTimeFormat(l); return true; } catch { return false; } };
+
 /** Coerce `input` into the shape of `def` (unknown keys dropped, wrong types replaced by the current value). */
 function conform(def: any, input: any, current: any, key = ''): any {
   if (Array.isArray(def)) {
@@ -97,8 +109,10 @@ function conform(def: any, input: any, current: any, key = ''): any {
   const fallback = current === undefined || typeof current !== typeof def ? def : current;
   if (typeof def === 'boolean') return typeof input === 'boolean' ? input : fallback;
   if (typeof def === 'number') {
-    const n = Number(input);
-    return input !== '' && input !== null && Number.isFinite(n) ? Math.min(1e13, Math.max(-1e6, n)) : fallback;
+    const n = typeof input === 'number' ? input : typeof input === 'string' && /^-?\d+(\.\d+)?$/.test(input.trim()) ? Number(input) : NaN;
+    if (!Number.isFinite(n)) return fallback;
+    const [min, max] = RANGES[key] ?? [0, 1e13];
+    return Math.min(max, Math.max(min, n));
   }
   if (typeof input !== 'string') return fallback;
   const s = input.slice(0, LIMITS[key] ?? 300);
@@ -106,7 +120,8 @@ function conform(def: any, input: any, current: any, key = ''): any {
   if (COLOR_FIELDS.has(key)) return s === '' || /^#[0-9a-fA-F]{6}$/.test(s) ? s : fallback;
   if (key === 'url' || key === 'publicUrl') return s === '' || /^https?:\/\/[^\s]+$/i.test(s) ? s : fallback;
   if (key === 'start' || key === 'end') return /^\d{2}:\d{2}$/.test(s) ? s : fallback;
-  if (key === 'locale') return /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(s) ? s : fallback;
+  if (key === 'locale') return /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(s) && validLocale(s) ? s : fallback;
+  if (ENUMS[key]) return ENUMS[key].includes(s) ? s : fallback;
   return s;
 }
 

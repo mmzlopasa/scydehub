@@ -33,9 +33,12 @@ export const mediarr: Plugin<Cfg, MediarrData> = {
   http: (c) => ({ headers: c.apiKey ? { [c.apiKeyHeader || 'X-Api-Key']: c.apiKey } : {} }),
   async collect({ http, config: c }) {
     const r = await http.get<any>(c.statsPath || '/api/stats');
+    if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error('The stats endpoint did not return a JSON object');
+    r.jobs = (Array.isArray(r.jobs) ? r.jobs : []).filter((j: any) => j && typeof j === 'object')
+      .map((j: any) => ({ name: String(j.name ?? '?'), active: Number(j.active) || 0, waiting: Number(j.waiting) || 0, failed: Number(j.failed) || 0 }));
     return finish({
       version: r.version, photos: Number(r.photos) || 0, videos: Number(r.videos) || 0, usageBytes: Number(r.usageBytes) || 0,
-      diskTotalBytes: r.diskTotalBytes, jobs: r.jobs ?? [], lastUploadAt: r.lastUploadAt ?? null,
+      diskTotalBytes: Number(r.diskTotalBytes) || undefined, jobs: r.jobs, lastUploadAt: r.lastUploadAt ?? null,
     });
   },
   mock(ctx) {

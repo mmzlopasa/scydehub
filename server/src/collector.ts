@@ -32,6 +32,8 @@ const timers = new Map<string, NodeJS.Timeout>();
 const scratch = new Map<string, Record<string, any>>();
 const ticks = new Map<string, number>();
 const running = new Set<string>();
+/** a poll was requested while another one was still in flight */
+const rerun = new Set<string>();
 /** bumped on every (re)schedule; a poll loop exits as soon as its generation is stale */
 const generation = new Map<string, number>();
 const listeners: ((s: InstanceState, prev?: InstanceState) => void)[] = [];
@@ -49,7 +51,7 @@ export function contextFor(row: InstanceRow, ephemeral = false): PluginContext {
   const plugin = getPlugin(row.plugin)!;
   const cfg = decryptedConfig(row);
   const httpDefaults = plugin.http?.(cfg) ?? {};
-  const baseUrl = (httpDefaults.baseUrl ?? cfg.url ?? 'http://localhost').replace(/\/+$/, '');
+  const baseUrl = httpDefaults.baseUrl ?? (cfg.url ?? 'http://localhost').replace(/\/+$/, '');
   if (!ephemeral && !scratch.has(row.id)) scratch.set(row.id, {});
   const tick = ephemeral ? 1 : (ticks.get(row.id) ?? 0) + 1;
   if (!ephemeral) ticks.set(row.id, tick);
@@ -87,8 +89,10 @@ export async function collectOnce(id: string): Promise<InstanceState | undefined
   if (!row) return;
   const plugin = getPlugin(row.plugin);
   if (!plugin) return;
-  if (running.has(id)) return states.get(id);
+  if (!row.enabled) return states.get(id); // "refresh" must not wake a disabled service
+  if (running.has(id)) { rerun.add(id); return states.get(id); }
   running.add(id);
+  const gen = generation.get(id);
   const prev = states.get(id);
   const now = Date.now();
   const started = performance.now();
@@ -118,8 +122,9 @@ export async function collectOnce(id: string): Promise<InstanceState | undefined
   } finally {
     running.delete(id);
   }
-  // the instance may have been deleted (or the whole config restored) while the poll was in flight
+  // deleted, disabled, reconfigured or restored while the poll was in flight: this result describes the old setup
   if (!getInstance(id)) return undefined;
+  if (generation.get(id) !== gen) return states.get(id);
   states.set(id, next);
   try {
     persist(next);
@@ -148,7 +153,13 @@ function schedule(row: InstanceRow) {
   }
   const loop = async () => {
     try {
+      rerun.delete(row.id);
       await collectOnce(row.id);
+      // a poll of the previous configuration was still running: wait for it, then poll with the new one
+      for (let i = 0; i < 60 && rerun.has(row.id) && generation.get(row.id) === gen; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        if (!running.has(row.id)) { rerun.delete(row.id); await collectOnce(row.id); }
+      }
     } catch (e) {
       console.error(`[collector] ${row.id}:`, (e as Error).message);
     }

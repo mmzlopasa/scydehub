@@ -25,18 +25,25 @@ export const pangolin: Plugin<Cfg, PangolinData> = {
   docsUrl: 'https://docs.pangolin.net/manage/integration-api',
   defaultInterval: 30,
   fields: [
-    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'In the config: flags.enable_integration_api: true (port server.integration_port, default 3003)' },
-    { key: 'apiKey', label: 'API key (id.secret)', type: 'secret', required: true },
+    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'Not the dashboard address. Enable flags.enable_integration_api: true in Pangolin\'s config.yml; the API listens on port 3003 (http://pangolin-host:3003, or the hostname you route to it). <URL>/v1/docs must open.' },
+    { key: 'apiKey', label: 'API key (id.secret)', type: 'secret', required: true, help: 'Organization → API Keys. Permissions needed: Site → List Sites and Resource → List Resources.' },
     { key: 'orgId', label: 'Org ID', type: 'string', required: true },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: `Bearer ${c.apiKey}` } }),
   async collect({ http, config: c }) {
     const org = encodeURIComponent(c.orgId);
+    const explain = (what: string) => (e: any) => {
+      if (e?.status === 401) throw new Error('Pangolin rejected the API key (HTTP 401) — check the key (id.secret)');
+      if (e?.status === 403) throw new Error(`The API key may not ${what} (HTTP 403) — add the permission "${what === 'list sites' ? 'List Sites' : 'List Resources'}" to the key and check the Org ID`);
+      if (e?.status === 404 || /Expected JSON/.test(String(e?.message))) throw new Error('This address is not the Pangolin Integration API — it runs on its own port (3003) once flags.enable_integration_api is on; <URL>/v1/docs must open');
+      throw e;
+    };
     const [sites, resources] = await Promise.all([
-      http.get<any>(`/v1/org/${org}/sites`, { query: { pageSize: 500 } }),
-      http.get<any>(`/v1/org/${org}/resources`, { query: { pageSize: 500 } }),
+      http.get<any>(`/v1/org/${org}/sites`, { query: { pageSize: 500 } }).catch(explain('list sites')),
+      http.get<any>(`/v1/org/${org}/resources`, { query: { pageSize: 500 } }).catch(explain('list resources')),
     ]);
+    if (!Array.isArray(sites?.data?.sites)) throw new Error('Unexpected answer from Pangolin — is this the Integration API URL?');
     return finish({
       sites: (sites.data?.sites ?? []).map((s: any) => ({
         id: s.siteId, name: s.name, type: s.type, online: s.type === 'local' || s.online === undefined ? null : !!s.online,

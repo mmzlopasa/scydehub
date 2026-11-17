@@ -1,4 +1,4 @@
-import { Agent, buildConnector, fetch, type Dispatcher } from 'undici';
+import { Agent, buildConnector, request as undiciRequest, type Dispatcher } from 'undici';
 import { createHash } from 'node:crypto';
 import type { TLSSocket } from 'node:tls';
 
@@ -17,7 +17,7 @@ export class HttpError extends Error {
   }
 }
 
-const MAX_BODY = 32 * 1024 * 1024;
+const MAX_BODY = 64 * 1024 * 1024;
 const agents = new Map<string, Dispatcher>();
 const defaultAgent = new Agent({ connect: { timeout: 8000 }, keepAliveTimeout: 10_000 });
 
@@ -83,6 +83,47 @@ export function buildUrl(base: string, path: string, query?: RequestOpts['query'
   return u.toString();
 }
 
+/** The small part of the Headers interface the integrations use. */
+export interface HeaderBag { get(name: string): string | null; getSetCookie(): string[] }
+export function headerBag(h: Record<string, string | string[] | undefined>): HeaderBag {
+  return {
+    get: (name) => { const v = h[name.toLowerCase()]; return v == null ? null : Array.isArray(v) ? v.join(', ') : String(v); },
+    getSetCookie: () => { const v = h['set-cookie']; return v == null ? [] : Array.isArray(v) ? v : [v]; },
+  };
+}
+
+export class TooLarge extends Error {}
+/** Read a response body, giving up as soon as it exceeds `max` bytes (a chunked response has no content-length to check). */
+export async function readCapped(res: { body: any }, max: number): Promise<Buffer> {
+  if (!res.body) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (typeof res.body.getReader !== 'function') {
+    // Node stream (undici.request)
+    for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+      size += chunk.byteLength;
+      if (size > max) {
+        res.body.destroy?.();
+        throw new TooLarge('Response too large');
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  }
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      throw new TooLarge('Response too large');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
 export function createHttpClient(baseUrl: string, defaults: { headers?: Record<string, string>; tls?: TlsOptions; timeoutMs?: number } = {}): HttpClient {
   const dispatcher = agentFor(defaults.tls);
   async function raw(path: string, opts: RequestOpts = {}) {
@@ -94,21 +135,32 @@ export function createHttpClient(baseUrl: string, defaults: { headers?: Record<s
       headers['content-type'] = 'application/x-www-form-urlencoded';
     } else if (opts.body !== undefined) {
       body = typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body);
-      headers['content-type'] ??= 'application/json';
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) headers['content-type'] = 'application/json';
     }
-    const res = await fetch(url, {
-      method: opts.method ?? (body ? 'POST' : 'GET'),
-      headers,
-      body,
-      dispatcher,
-      signal: AbortSignal.timeout(opts.timeoutMs ?? defaults.timeoutMs ?? 10_000),
-      redirect: 'manual',
-    } as any);
+    // undici.request rather than fetch: fetch refuses a list of "bad ports" (6000, 6667, 10080, …) that homelab services do use.
+    // It never follows redirects, which is what we want: credentials must not travel to another address.
+    let res: { status: number; headers: HeaderBag; body: any };
+    try {
+      const r = await undiciRequest(url, {
+        method: (opts.method ?? (body ? 'POST' : 'GET')) as Dispatcher.HttpMethod,
+        headers,
+        body,
+        dispatcher,
+        signal: AbortSignal.timeout(opts.timeoutMs ?? defaults.timeoutMs ?? 10_000),
+      });
+      res = { status: r.statusCode, headers: headerBag(r.headers), body: r.body };
+    } catch (e: any) {
+      if (e?.name === 'TimeoutError' || e?.name === 'AbortError') throw new Error(`No answer within ${(opts.timeoutMs ?? defaults.timeoutMs ?? 10_000) / 1000} s`);
+      // a TLS-only port answers plain HTTP by closing the connection or with garbage
+      const why = String(e?.cause?.message ?? e?.message ?? '');
+      if (url.startsWith('http://') && /other side closed|ECONNRESET|socket hang up|HPE_|Parse Error/i.test(why))
+        throw new Error(`${why} — the service may only answer over HTTPS: try https:// in the URL`);
+      throw e;
+    }
     const len = Number(res.headers.get('content-length') ?? 0);
     if (len > MAX_BODY) throw new HttpError(res.status, `Response too large (${len} bytes) ${path}`);
-    const text = await res.text();
-    if (text.length > MAX_BODY) throw new HttpError(res.status, `Response too large ${path}`);
-    return { status: res.status, headers: res.headers as unknown as Headers, text };
+    const buf = await readCapped(res, MAX_BODY).catch((e) => { throw e instanceof TooLarge ? new HttpError(res.status, `Response too large ${path}`) : e; });
+    return { status: res.status, headers: res.headers as unknown as Headers, text: buf.toString('utf8') };
   }
   async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
     const r = await raw(path, opts);
@@ -134,7 +186,12 @@ export function createHttpClient(baseUrl: string, defaults: { headers?: Record<s
     try {
       return JSON.parse(r.text) as T;
     } catch {
-      return r.text as T;
+      // A page instead of data (login screen, proxy error, wrong base path) must not be mistaken for "everything is zero".
+      const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim();
+      const method = (opts.method ?? (opts.body !== undefined || opts.form ? 'POST' : 'GET')).toUpperCase();
+      if (method === 'GET' || /html/i.test(type) || /^\s*<(!doctype|html)/i.test(r.text))
+        throw new HttpError(r.status, `Expected JSON from ${path.split('?')[0]} but got ${type || 'something else'} — check the URL and base path`, r.text);
+      return r.text as T; // some APIs answer writes with a plain "OK"
     }
   }
   return {

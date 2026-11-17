@@ -5,11 +5,12 @@ import { Badge, Button, StatusDot } from '../../components/ui';
 import { dateTime, duration } from '../../lib/format';
 import { PageHead, Card } from './Settings';
 import { toast } from '../../components/feedback';
+import { fail } from '../../lib/fail';
 
 export function Incidents() {
   const live = useStore((s) => s.incidents);
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { get('/api/incidents').then(setRows); }, [live]);
+  useEffect(() => { get('/api/incidents').then(setRows).catch(fail); }, [live]);
   return (
     <>
       <PageHead title="Incidents" desc="Log of all incidents with start time, duration and acknowledgement." />
@@ -25,7 +26,7 @@ export function Incidents() {
               <Badge tone={i.severity === 'critical' ? 'bad' : i.severity === 'warning' ? 'warn' : 'info'}>{i.severity}</Badge>
               <div className="num w-44 text-right text-xs text-muted">{dateTime(i.started_at)} · {duration(((i.resolved_at ?? Date.now()) - i.started_at) / 1000)}</div>
               <div className="w-36 text-right text-xs">
-                {i.acked_at ? <span className="text-muted">acknowledged by {i.acked_by}</span> : !i.resolved_at ? <Button size="sm" onClick={() => post(`/api/incidents/${i.id}/ack`).then(() => toast('Acknowledged'))}>Acknowledge</Button> : <span className="text-ok">resolved</span>}
+                {i.acked_at ? <span className="text-muted">acknowledged by {i.acked_by}</span> : !i.resolved_at ? <Button size="sm" onClick={() => post(`/api/incidents/${i.id}/ack`).then(() => toast('Acknowledged')).catch(fail)}>Acknowledge</Button> : <span className="text-ok">resolved</span>}
               </div>
             </div>
           ))}

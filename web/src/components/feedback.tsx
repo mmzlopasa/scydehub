@@ -36,6 +36,7 @@ let current: ConfirmReq | null = null;
 const csubs = new Set<() => void>();
 export function confirmDialog(opts: Omit<ConfirmReq, 'resolve'>): Promise<boolean> {
   return new Promise((resolve) => {
+    current?.resolve(false); // a second dialog replaces the first: settle it instead of leaving its caller hanging
     current = { ...opts, resolve };
     csubs.forEach((f) => f());
   });
@@ -58,6 +59,7 @@ export function ConfirmHost() {
 
 // ---------- password re-confirmation ("sudo") ----------
 let sudoResolve: ((v: boolean) => void) | null = null;
+let sudoPending: Promise<boolean> | null = null;
 /** Sensitive requests answer 403 {sudo:true}; lib/api.ts calls this, shows the dialog and retries. */
 export function SudoHost() {
   const [open, setOpen] = useState(false);
@@ -65,14 +67,14 @@ export function SudoHost() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setSudoPrompt(() => new Promise<boolean>((resolve) => {
-      sudoResolve?.(false);
+    // several requests may need confirmation at once: they all wait for the same dialog
+    setSudoPrompt(() => (sudoPending ??= new Promise<boolean>((resolve) => {
       sudoResolve = resolve;
       setPw(''); setErr(''); setOpen(true);
-    }));
+    }).finally(() => { sudoPending = null; })));
     return () => setSudoPrompt(null);
   }, []);
-  const done = (v: boolean) => { setOpen(false); sudoResolve?.(v); sudoResolve = null; };
+  const done = (v: boolean) => { setOpen(false); setPw(''); sudoResolve?.(v); sudoResolve = null; };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setErr('');

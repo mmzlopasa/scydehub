@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, post } from './api';
 import { confirmDialog, toast } from '../components/feedback';
-import { getState } from './store';
+import { getState, useStore } from './store';
 import type { Pt } from '../components/charts';
 
 /** Load history series; refresh every `refreshSec`. */
@@ -24,7 +24,7 @@ export function useHistory(series: string[], hours: number, refreshSec = 30, poi
 }
 
 /** Keeps a rolling in-memory buffer of a live value (for sparklines that update every poll). */
-export function useLiveSeries(value: number | undefined, max = 60, seed?: Pt[]) {
+export function useLiveSeries(value: number | undefined, max = 60, seed?: Pt[], tick?: number) {
   const [buf, setBuf] = useState<Pt[]>(seed ?? []);
   useEffect(() => {
     if (!seed || !seed.length) return;
@@ -34,7 +34,8 @@ export function useLiveSeries(value: number | undefined, max = 60, seed?: Pt[]) 
   useEffect(() => {
     if (value === undefined || !Number.isFinite(value)) return;
     setBuf((b) => [...b.slice(-(max - 1)), { ts: Date.now(), v: value }]);
-  }, [value, max]);
+    // `tick` = time of the poll: a value that stays the same still gets a point, otherwise a steady line never appears
+  }, [value, max, tick]);
   return buf;
 }
 
@@ -67,7 +68,7 @@ export async function runAction(instanceId: string, actionId: string, params: Re
     toast(r.message);
     return true;
   } catch (e: any) {
-    toast(e.message ?? 'Action failed', 'bad');
+    if (e?.message !== 'Cancelled') toast(e.message ?? 'Action failed', 'bad'); // password prompt dismissed: not an error
     return false;
   }
 }
@@ -77,10 +78,13 @@ export function useMetricSeries(instanceId: string | undefined, metric: string, 
   const [seed, setSeed] = useState<Pt[] | undefined>(undefined);
   useEffect(() => {
     if (!instanceId) return;
+    let live = true; // a late answer for the previous service/metric must not overwrite this one
     const key = `inst:${instanceId}:${metric}`;
     get<Record<string, Pt[]>>(`/api/history?series=${encodeURIComponent(key)}&from=${Date.now() - minutes * 60_000}&points=${max}`)
-      .then((d) => setSeed(d[key] ?? []))
-      .catch(() => setSeed([]));
+      .then((d) => { if (live) setSeed(d[key] ?? []); })
+      .catch(() => { if (live) setSeed([]); });
+    return () => { live = false; };
   }, [instanceId, metric, minutes, max]);
-  return useLiveSeries(value, max, seed);
+  const tick = useStore((s) => (instanceId ? s.states[instanceId]?.updatedAt : undefined));
+  return useLiveSeries(value, max, seed, tick);
 }

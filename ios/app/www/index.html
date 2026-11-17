@@ -19,7 +19,12 @@
     .logo { display: flex; gap: 10px; align-items: center; font-weight: 600; }
     .hint { font-size: 12px; color: #8b90a6; margin-top: 16px; line-height: 1.5; }
       #hub { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #0d0f14; }
-    form[hidden], #hub[hidden] { display: none; }
+    form[hidden], #hub[hidden], #corner[hidden], #down[hidden] { display: none; }
+    /* owned by the app, not by the Hub page: works even when the Hub is down or its header is hidden */
+    #corner { position: fixed; left: 0; top: 0; width: 48px; height: 48px; z-index: 5; }
+    #down { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; background: #0d0f14; }
+    #down button { width: auto; padding: 0 22px; margin: 8px 6px 0; }
+    #down .ghost { background: transparent; border: 1px solid rgba(255,255,255,.2); }
   </style>
 </head>
 <body>
@@ -30,14 +35,20 @@
     <label for="url">Hub URL</label>
     <input id="url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://hub.example.com" required />
     <label for="token">Kiosk token</label>
-    <input id="token" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk_…" required />
+    <input id="token" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Kiosk token" type="password" required />
     <label for="profile">Layout</label>
     <select id="profile"><option value="tablet">Tablet</option><option value="tv">TV / wall (larger text)</option><option value="desktop">Monitor</option><option value="mobile">Phone</option></select>
     <button type="submit">Save and start</button>
     <div class="err" id="err"></div>
-    <div class="hint">For a true kiosk, turn on <b>Guided Access</b> (Settings → Accessibility → Guided Access) and triple-click the side button. To return to this screen, quickly tap the clock in the top-right corner of the kiosk 5 times.</div>
+    <div class="hint">For a true kiosk, turn on <b>Guided Access</b> (Settings → Accessibility → Guided Access) and triple-click the side button. To return to this screen, quickly tap the <b>top-left corner</b> of the screen 5 times. Use an <b>https://</b> address when you can: iOS may refuse to show a plain http:// Hub inside the app.</div>
   </form>
   <iframe id="hub" title="SCYDE Hub" allow="fullscreen" referrerpolicy="no-referrer" hidden></iframe>
+  <div id="corner" hidden></div>
+  <div id="down" hidden><div>
+    <h1>The Hub is unreachable</h1>
+    <p id="downmsg"></p>
+    <button type="button" id="retry">Try again</button><button type="button" class="ghost" id="tosetup">Settings</button>
+  </div></div>
   <script>
     // The Hub is shown inside a frame instead of navigating the app's own WebView to it. That way no web
     // page — the Hub or anything it links to — ever gets the app's native bridge.
@@ -45,19 +56,51 @@
     const form = document.getElementById('f');
     const frame = document.getElementById('hub');
     const read = () => { try { return JSON.parse(localStorage.getItem(K) || '{}'); } catch { return {}; } };
-    const valid = (c) => c && /^https?:\/\/[^\s]+$/.test(c.url || '') && typeof c.token === 'string' && c.token.length > 8;
+    const valid = (c) => c && /^https?:\/\/[^\s]+$/.test(c.url || '') && typeof c.token === 'string' && c.token.length >= 8;
 
-    function show(c) {
+    const corner = document.getElementById('corner');
+    const down = document.getElementById('down');
+    let retryTimer = 0;
+    async function reachable(c) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      try {
+        const r = await fetch(c.url + '/healthz', { cache: 'no-store', credentials: 'omit', signal: ctl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+      } finally { clearTimeout(t); }
+    }
+    // A frame that fails to load shows a blank page with no way out, so the Hub is checked first; while it is
+    // down the app shows its own screen (with a way back to the settings) and keeps retrying.
+    async function show(c) {
+      clearTimeout(retryTimer);
+      form.hidden = true;
+      try { await reachable(c); } catch (x) {
+        frame.hidden = true; corner.hidden = true; frame.removeAttribute('src');
+        document.getElementById('downmsg').textContent = c.url + ' did not answer (' + (x.name === 'AbortError' ? 'timeout' : x.message) + '). Trying again every 15 seconds.';
+        down.hidden = false;
+        retryTimer = setTimeout(() => { if (!down.hidden) show(c); }, 15000);
+        return;
+      }
+      down.hidden = true;
       // token in the fragment: never sent to the server, never logged
       frame.src = c.url + '/kiosk?profile=' + encodeURIComponent(c.profile || 'tablet') + '#token=' + encodeURIComponent(c.token);
       frame.hidden = false;
-      form.hidden = true;
+      corner.hidden = false;
     }
     function setup() {
-      frame.hidden = true;
+      clearTimeout(retryTimer);
+      frame.hidden = true; corner.hidden = true; down.hidden = true;
       frame.removeAttribute('src');
       form.hidden = false;
     }
+    document.getElementById('retry').addEventListener('click', () => { const c = read(); if (valid(c)) show(c); else setup(); });
+    document.getElementById('tosetup').addEventListener('click', setup);
+    let taps = [];
+    corner.addEventListener('click', () => {
+      const t = Date.now();
+      taps = taps.filter((x) => t - x < 2500).concat(t);
+      if (taps.length >= 5) { taps = []; setup(); }
+    });
     // the kiosk page asks for the setup screen with a 5-tap on its clock
     window.addEventListener('message', (e) => {
       const c = read();
@@ -66,20 +109,19 @@
     });
 
     const saved = read();
-    for (const k of ['url', 'token', 'profile']) if (saved[k]) document.getElementById(k).value = saved[k];
+    for (const k of ['url', 'profile']) if (saved[k]) document.getElementById(k).value = saved[k];
+    // a saved token is not put back on screen; leaving the field empty keeps it
+    if (valid(saved)) { document.getElementById('token').required = false; document.getElementById('token').placeholder = 'Saved — leave empty to keep it'; }
     if (valid(saved)) show(saved);
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const c = { url: document.getElementById('url').value.trim().replace(/\/+$/, ''), token: document.getElementById('token').value.trim(), profile: document.getElementById('profile').value };
+      const c = { url: document.getElementById('url').value.trim().replace(/\/+$/, ''), token: document.getElementById('token').value.trim() || (read().token || ''), profile: document.getElementById('profile').value };
       const err = document.getElementById('err');
       if (!/^https?:\/\//.test(c.url)) { err.textContent = 'The URL must start with http:// or https://'; return; }
-      if (c.token.length < 9) { err.textContent = 'Enter the kiosk token'; return; }
+      if (!/^[A-Za-z0-9_.~-]{8,200}$/.test(c.token)) { err.textContent = 'Enter the kiosk token (copy it from Settings → Kiosk & devices)'; return; }
       err.textContent = 'Checking the connection…';
-      try {
-        const r = await fetch(c.url + '/healthz', { cache: 'no-store', credentials: 'omit' });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-      } catch (x) { err.textContent = 'The Hub is unreachable: ' + x.message; return; }
+      try { await reachable(c); } catch (x) { err.textContent = 'The Hub is unreachable: ' + (x.name === 'AbortError' ? 'no answer' : x.message); return; }
       err.textContent = '';
       localStorage.setItem(K, JSON.stringify(c));
       show(c);

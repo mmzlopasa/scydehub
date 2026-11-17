@@ -15,7 +15,7 @@ import { metricFormat, metricLabel } from '../../lib/metrics';
 export function Clock({ size, w }: WidgetProps) {
   const now = useNow(1000);
   const d = new Date(now);
-  const seconds = size !== 'S' && w.options?.seconds !== false;
+  const seconds = w.options?.seconds !== false; // the digits scale with the card, so seconds fit at every size
   // the digits scale with the card itself (container units), so the clock fills any size without overflowing
   return (
     <div className="flex h-full flex-col justify-center [container-type:size]">
@@ -32,10 +32,14 @@ const WMO = (c: number) =>
   c === 0 ? [Sun, 'Clear'] : c <= 2 ? [CloudSun, 'Partly cloudy'] : c === 3 ? [Cloud, 'Cloudy'] : c <= 48 ? [CloudFog, 'Fog'] : c <= 67 ? [CloudRain, 'Rain'] : c <= 77 ? [CloudSnow, 'Snow'] : c <= 82 ? [CloudRain, 'Showers'] : c <= 86 ? [CloudSnow, 'Snow'] : [CloudLightning, 'Thunderstorm'];
 export function Weather({ w, size }: WidgetProps) {
   const settings = useStore((s) => s.settings);
-  const loc = { ...settings?.weather, ...(w.options?.lat ? { lat: w.options.lat, lon: w.options.lon, name: w.options.name } : {}) };
+  const coord = (v: unknown, max: number) => { const n = v === '' || v == null ? NaN : Number(v); return Number.isFinite(n) && Math.abs(n) <= max ? n : undefined; };
+  const olat = coord(w.options?.lat, 90), olon = coord(w.options?.lon, 180);
+  // the widget's own place only when both coordinates are usable; otherwise the one from Settings
+  const loc = olat !== undefined && olon !== undefined ? { lat: olat, lon: olon, name: w.options?.name || settings?.weather?.name } : { ...settings?.weather };
   const [wx, setWx] = useState<any>(null);
   useEffect(() => {
-    if (!loc.lat) return;
+    if (loc.lat == null || loc.lon == null) return;
+    setWx(null);
     const load = () =>
       get(`/api/weather?lat=${loc.lat}&lon=${loc.lon}`).then(setWx).catch(() => {});
     load();
@@ -63,7 +67,7 @@ export function Weather({ w, size }: WidgetProps) {
             const [I] = WMO(wx.daily.weather_code[i]) as [any];
             return (
               <div key={t} className="rounded-xl bg-panel-2 py-2">
-                <div className="capitalize text-muted">{new Date(t).toLocaleDateString(locale(), { weekday: 'short' })}</div>
+                <div className="capitalize text-muted">{new Date(t + 'T12:00').toLocaleDateString(locale(), { weekday: 'short' })}</div>
                 <I className="mx-auto my-1 size-4" />
                 <div className="num">{deg(wx.daily.temperature_2m_max[i])}° <span className="text-muted">{deg(wx.daily.temperature_2m_min[i])}°</span></div>
               </div>
@@ -129,7 +133,7 @@ export function Checks({ size, w }: WidgetProps) {
               <div className="w-20 max-sm:hidden"><Sparkline data={c.recent.filter((r) => r.latency != null).map((r) => ({ ts: r.ts, v: r.latency! }))} height={22} fill={false} /></div>
             )}
             <div className="num w-16 text-right text-xs">
-              {c.type === 'ssl' && c.extra?.daysLeft != null ? <span className={c.extra.daysLeft < 14 ? 'text-warn' : ''}>{c.extra.daysLeft} d</span> : c.latencyMs != null ? `${Math.round(c.latencyMs)} ms` : '—'}
+              {c.type === 'ssl' && c.extra?.daysLeft != null ? <span className={c.extra.daysLeft < (Number(c.extra.warnDays) || 14) ? 'text-warn' : ''}>{c.extra.daysLeft} d</span> : c.latencyMs != null ? `${Math.round(c.latencyMs)} ms` : '—'}
             </div>
             {size !== 'S' && <div className="num w-14 text-right text-xs text-muted">{c.uptime?.d1 != null ? `${c.uptime.d1}%` : '—'}</div>}
           </div>
@@ -232,7 +236,7 @@ export function Calendar({ size }: WidgetProps) {
   const states = useStore((s) => s.states);
   const items = Object.values(states)
     .filter((s) => (s.plugin === 'radarr' || s.plugin === 'sonarr') && s.data?.calendar)
-    .flatMap((s) => s.data.calendar.map((c: any) => ({ ...c, source: s.plugin })))
+    .flatMap((s) => (Array.isArray(s.data.calendar) ? s.data.calendar : []).map((c: any) => ({ ...c, source: s.plugin, instanceId: s.id })))
     .filter((c: any) => new Date(c.date).getTime() > Date.now() - 86400_000)
     .sort((a: any, b: any) => a.date.localeCompare(b.date));
   return <CalendarList items={items} size={size} />;
@@ -288,7 +292,7 @@ export function Summary() {
       <div><div className="text-[11px] uppercase tracking-wide text-muted">Services</div><div className="dot text-2xl font-semibold"><span className={s.down ? 'text-bad' : 'text-ok'}>{s.up}</span><span className="text-muted">/{s.total}</span></div></div>
       <div><div className="text-[11px] uppercase tracking-wide text-muted">Alerts</div><div className={cx('dot text-2xl font-semibold', s.alerts > 0 && 'text-bad')}>{s.alerts}</div></div>
       <div><div className="text-[11px] uppercase tracking-wide text-muted">Streams</div><div className="dot text-2xl font-semibold">{s.streams}</div></div>
-      <div><div className="text-[11px] uppercase tracking-wide text-muted">WAN</div><div className="dot text-2xl font-semibold">{s.wan ? `${(s.wan.rxBps / 1e6).toFixed(0)}` : '—'}<span className="text-sm text-muted"> Mbps</span></div></div>
+      <div><div className="text-[11px] uppercase tracking-wide text-muted">WAN</div><div className="dot text-2xl font-semibold">{s.wan ? `${(s.wan.rxBps / 1e6).toFixed(0)}` : '—'}{s.wan && <span className="text-sm text-muted"> Mbps</span>}</div></div>
     </div>
   );
 }

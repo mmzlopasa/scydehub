@@ -67,6 +67,10 @@ const migrations: string[] = [
   ALTER TABLE instances ADD COLUMN display TEXT NOT NULL DEFAULT '{}';
   ALTER TABLE boards ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
   `,
+  /* 3 — remember whether an incident was announced (incidents that open during maintenance are announced afterwards) */ `
+  ALTER TABLE incidents ADD COLUMN notified_at INTEGER;
+  UPDATE incidents SET notified_at = started_at;
+  `,
 ];
 
 /** Data migrations that need code (run right after the SQL migration with the same number). */

@@ -6,6 +6,7 @@ import { Badge, Button, Input, Label, Modal, Toggle, inputCls } from '../../comp
 import { FieldInput } from '../../components/FieldInput';
 import { confirmDialog, toast } from '../../components/feedback';
 import { PageHead, Card } from './Settings';
+import { fail } from '../../lib/fail';
 
 const RULE_TYPES: Record<string, string> = {
   instance_down: 'Service offline', check_down: 'Check failing', metric: 'Metric above/below threshold', cert_expiry: 'Certificate expiring', plugin_alert: 'Service warnings (health, backup, indexer, disk…)',
@@ -18,10 +19,15 @@ function RuleForm({ rule, channels, onClose }: { rule?: any; channels: any[]; on
   const [r, setR] = useState<any>(rule ?? { name: '', type: 'instance_down', target: {}, severity: 'critical', duration_sec: 120, channels: [], enabled: true });
   const t = r.target ?? {};
   const setT = (k: string, v: any) => setR((s: any) => ({ ...s, target: { ...s.target, [k]: v } }));
-  const metricKeys = Object.keys(states[t.instanceId]?.metrics ?? {});
+  // keep a saved metric selectable even when the service reports no metrics right now
+  const metricKeys = [...new Set([...Object.keys(states[t.instanceId]?.metrics ?? {}), ...(t.metric ? [t.metric] : [])])];
   const save = async () => {
-    if (!r.name) return toast('Name is required', 'bad');
-    try { if (rule) await patch(`/api/alert-rules/${rule.id}`, r); else await post('/api/alert-rules', r); onClose(); } catch (e: any) { toast(e.message, 'bad'); }
+    if (!r.name.trim()) return toast('Name is required', 'bad');
+    if (r.type === 'metric' && (!t.instanceId || !t.metric || t.value === '' || t.value === undefined || !Number.isFinite(Number(t.value))))
+      return toast('Choose a service, a metric and a threshold', 'bad');
+    // channels that were deleted meanwhile must not stay on the rule (it would notify nobody)
+    const body = { ...r, channels: r.channels.filter((id: string) => channels.some((c) => c.id === id)) };
+    try { if (rule) await patch(`/api/alert-rules/${rule.id}`, body); else await post('/api/alert-rules', body); onClose(); } catch (e: any) { fail(e); }
   };
   return (
     <Modal open onClose={onClose} title={rule ? 'Edit rule' : 'New rule'} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
@@ -46,7 +52,7 @@ function RuleForm({ rule, channels, onClose }: { rule?: any; channels: any[]; on
           <div className="grid gap-3 sm:grid-cols-3">
             <Label><span className="text-xs font-medium text-muted">Metric</span><select className={inputCls} value={t.metric ?? ''} onChange={(e) => setT('metric', e.target.value)}><option value="">—</option>{metricKeys.map((m) => <option key={m}>{m}</option>)}</select></Label>
             <Label><span className="text-xs font-medium text-muted">Condition</span><select className={inputCls} value={t.op ?? '>'} onChange={(e) => setT('op', e.target.value)}><option value=">">greater than</option><option value="<">less than</option></select></Label>
-            <Label><span className="text-xs font-medium text-muted">Threshold</span><Input type="number" value={t.value ?? ''} onChange={(e) => setT('value', Number(e.target.value))} /></Label>
+            <Label><span className="text-xs font-medium text-muted">Threshold</span><Input type="number" value={t.value ?? ''} onChange={(e) => setT('value', e.target.value === '' ? '' : Number(e.target.value))} /></Label>
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
@@ -67,7 +73,15 @@ function ChannelForm({ channel, types, onClose }: { channel?: any; types: any[];
   const [c, setC] = useState<any>(channel ?? { type: types[0]?.id, name: '', config: defaultsFor(types[0]?.id), enabled: true });
   const type = types.find((t) => t.id === c.type);
   const save = async () => {
-    try { if (channel) await patch(`/api/channels/${channel.id}`, c); else await post('/api/channels', c); onClose(); } catch (e: any) { if (e.message !== 'Cancelled') toast(e.message, 'bad'); }
+    if (!c.type) return toast('Channel types are still loading — try again in a moment', 'bad');
+    try {
+      if (channel) {
+        // connection details are only sent when they changed (changing them asks for the password)
+        const changed = JSON.stringify(c.config) !== JSON.stringify(channel.config);
+        await patch(`/api/channels/${channel.id}`, { name: c.name, enabled: c.enabled, ...(changed ? { config: c.config } : {}) });
+      } else await post('/api/channels', c);
+      onClose();
+    } catch (e: any) { fail(e); }
   };
   return (
     <Modal open onClose={onClose} title={channel ? 'Edit channel' : 'New channel'} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
@@ -87,22 +101,23 @@ export function Alerts() {
   const [types, setTypes] = useState<any[]>([]);
   const [editRule, setEditRule] = useState<any | null | undefined>(undefined);
   const [editCh, setEditCh] = useState<any | null | undefined>(undefined);
-  const load = () => Promise.all([get('/api/alert-rules').then(setRules), get('/api/channels').then(setChannels), get('/api/channel-types').then(setTypes)]);
+  const load = () => Promise.all([get('/api/alert-rules').then(setRules), get('/api/channels').then(setChannels), get('/api/channel-types').then(setTypes)]).catch(fail);
+  const liveChannels = (r: any) => r.channels.filter((id: string) => channels.some((c) => c.id === id)).length;
   useEffect(() => { load(); }, []);
   return (
     <>
       <PageHead title="Alerts & channels" desc="Rules open an incident when a condition holds long enough and notify the channels. When things recover, the incident is closed and a recovery notification is sent." />
       <Card className="mb-6">
-        <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Channels</h2><Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEditCh(null)}>Add channel</Button></div>
+        <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Channels</h2><Button size="sm" variant="primary" disabled={!types.length} icon={<Plus className="size-3.5" />} onClick={() => setEditCh(null)}>Add channel</Button></div>
         <div className="space-y-2">
           {channels.map((c) => (
             <div key={c.id} className="flex items-center gap-3 rounded-2xl bg-panel-2 px-3 py-2">
               <BellRing className="size-4 text-accent" />
               <div className="flex-1"><div className="text-sm font-medium">{c.name}</div><div className="text-xs text-muted">{types.find((t) => t.id === c.type)?.name}</div></div>
               {!c.enabled && <Badge>disabled</Badge>}
-              <Button size="sm" variant="ghost" icon={<Send className="size-3.5" />} onClick={() => post(`/api/channels/${c.id}/test`).then(() => toast('Test notification sent')).catch((e) => toast(e.message, 'bad'))}>Test</Button>
+              <Button size="sm" variant="ghost" icon={<Send className="size-3.5" />} onClick={() => post(`/api/channels/${c.id}/test`).then(() => toast('Test notification sent')).catch(fail)}>Test</Button>
               <Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEditCh(c)} />
-              <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete ${c.name}?`, danger: true })) { await del(`/api/channels/${c.id}`); load(); } }} />
+              <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete ${c.name}?`, danger: true })) { await del(`/api/channels/${c.id}`).catch(fail); load(); } }} />
             </div>
           ))}
           {!channels.length && <div className="text-sm text-muted">No channels yet. Recommended: ntfy (push to your phone) or Telegram.</div>}
@@ -114,10 +129,10 @@ export function Alerts() {
           {rules.map((r) => (
             <div key={r.id} className="flex items-center gap-3 rounded-2xl bg-panel-2 px-3 py-2">
               <Badge tone={r.severity === 'critical' ? 'bad' : r.severity === 'warning' ? 'warn' : 'info'}>{r.severity}</Badge>
-              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{r.name}</div><div className="truncate text-xs text-muted">{RULE_TYPES[r.type]} · after {r.duration_sec}s · {r.channels.length ? `${r.channels.length} channels` : 'all channels'}</div></div>
-              <Toggle checked={r.enabled} onChange={(v) => patch(`/api/alert-rules/${r.id}`, { ...r, enabled: v }).then(load)} />
+              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{r.name}</div><div className="truncate text-xs text-muted">{RULE_TYPES[r.type]} · after {r.duration_sec}s · {liveChannels(r) ? `${liveChannels(r)} channel${liveChannels(r) === 1 ? '' : 's'}` : 'all channels'}</div></div>
+              <Toggle checked={r.enabled} onChange={(v) => patch(`/api/alert-rules/${r.id}`, { enabled: v }).then(load).catch(fail)} />
               <Button size="sm" variant="ghost" icon={<Pencil className="size-3.5" />} onClick={() => setEditRule(r)} />
-              <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete rule?`, danger: true })) { await del(`/api/alert-rules/${r.id}`); load(); } }} />
+              <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={async () => { if (await confirmDialog({ title: `Delete rule?`, danger: true })) { await del(`/api/alert-rules/${r.id}`).catch(fail); load(); } }} />
             </div>
           ))}
         </div>

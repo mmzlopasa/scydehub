@@ -13,7 +13,7 @@ export interface RuleRow {
 }
 export interface Incident {
   id: number; rule_id: string | null; key: string; title: string; message: string | null; severity: Severity;
-  started_at: number; resolved_at: number | null; acked_at: number | null; acked_by: string | null;
+  started_at: number; resolved_at: number | null; acked_at: number | null; acked_by: string | null; notified_at?: number | null;
 }
 
 interface Condition { key: string; rule: RuleRow; title: string; message: string; severity: Severity; since: number }
@@ -21,10 +21,14 @@ interface Condition { key: string; rule: RuleRow; title: string; message: string
 const pending = new Map<string, number>();
 const SEV: Record<Severity, number> = { info: 0, warning: 1, critical: 2 };
 
+/** A failed poll says nothing about the service's warnings or metrics: what was known before stays as it was. */
+const unknownNow = () => new Set(getStates().filter((s) => s.status === 'down' && s.error).map((s) => s.id));
+
 function evaluate(rules: RuleRow[]): Condition[] {
   const now = Date.now();
   const out: Condition[] = [];
   const instances = getStates();
+  const frozen = unknownNow();
   const checks = getCheckStates();
   for (const rule of rules) {
     const t = json<Record<string, any>>(rule.target, {});
@@ -33,13 +37,14 @@ function evaluate(rules: RuleRow[]): Condition[] {
         for (const s of instances) {
           if (t.instanceId && t.instanceId !== s.id) continue;
           if (s.status === 'down')
-            out.push({ key: `${rule.id}:${s.id}`, rule, severity: rule.severity, since: s.statusSince, title: `${s.name} is unreachable`, message: s.error ?? 'Service is not responding' });
+            out.push({ key: `${rule.id}:${s.id}`, rule, severity: rule.severity, since: s.statusSince, title: `${s.name} is ${s.error ? 'unreachable' : 'down'}`, message: s.error ?? s.summary ?? 'Service is not responding' });
         }
         break;
       case 'check_down':
         for (const c of checks) {
           if (t.checkId && t.checkId !== c.id) continue;
-          if (c.type === 'ssl' && !t.checkId) continue; // cert problems handled by cert_expiry
+          // certificate dates are handled by cert_expiry; an SSL check that cannot connect at all is a failing check
+          if (c.type === 'ssl' && !t.checkId && (c.extra as any)?.daysLeft !== undefined) continue;
           if (c.enabled && c.ok === false)
             out.push({ key: `${rule.id}:${c.id}`, rule, severity: rule.severity, since: c.statusSince, title: `${c.name} is failing its check`, message: c.message ?? `${c.type.toUpperCase()} ${c.target}` });
         }
@@ -57,7 +62,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
         for (const s of instances) {
           if (t.instanceId && t.instanceId !== s.id) continue;
           const v = s.metrics?.[t.metric];
-          if (v === undefined || s.status === 'down') continue;
+          if (v === undefined || frozen.has(s.id) || s.status === 'disabled') continue;
           const hit = t.op === '<' ? v < Number(t.value) : v > Number(t.value);
           const key = `${rule.id}:${s.id}:${t.metric}`;
           if (hit) {
@@ -70,7 +75,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
         const min = SEV[(t.minSeverity as Severity) ?? 'warning'] ?? 1;
         for (const s of instances) {
           if (t.instanceId && t.instanceId !== s.id) continue;
-          if (s.status === 'down' || s.status === 'disabled') continue;
+          if (frozen.has(s.id) || s.status === 'disabled') continue;
           for (const a of s.alerts ?? []) {
             if (SEV[a.severity] < min) continue;
             const key = `${rule.id}:${s.id}:${a.key}`;
@@ -84,7 +89,7 @@ function evaluate(rules: RuleRow[]): Condition[] {
   }
   // forget pending keys that are no longer active
   const active = new Set(out.map((c) => c.key));
-  for (const k of [...pending.keys()]) if (!active.has(k)) pending.delete(k);
+  for (const k of [...pending.keys()]) if (!active.has(k) && !frozen.has(k.split(':')[1])) pending.delete(k);
   return out;
 }
 
@@ -101,9 +106,19 @@ export async function tick() {
   const activeKeys = new Set<string>();
   const maintenance = getSetting<number>('maintenanceUntil', 0) > now;
 
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
+  const frozen = unknownNow();
+  const notify = (inc: Incident, rule: RuleRow) => {
+    const ch = json<string[]>(rule.channels, []);
+    void sendTo(ch.length ? ch : 'all', { title: inc.title, message: inc.message ?? '', severity: inc.severity, url: publicUrl() || undefined });
+    q.run('UPDATE incidents SET notified_at = ? WHERE id = ?', now, inc.id);
+  };
   for (const c of conds) {
     activeKeys.add(c.key);
-    if (openByKey.has(c.key)) continue;
+    const existing = openByKey.get(c.key);
+    // opened during a maintenance window and still going on afterwards: announce it now
+    if (existing && !existing.notified_at && !maintenance) notify(existing, c.rule);
+    if (existing) continue;
     if (now - c.since < c.rule.duration_sec * 1000) continue;
     const r = q.run(
       'INSERT INTO incidents (rule_id, key, title, message, severity, started_at) VALUES (?,?,?,?,?,?)',
@@ -111,19 +126,20 @@ export async function tick() {
     );
     const inc = q.get<Incident>('SELECT * FROM incidents WHERE id = ?', Number(r.lastInsertRowid))!;
     bus.publish({ type: 'incident', incident: inc });
-    if (!maintenance) {
-      const ch = json<string[]>(c.rule.channels, []);
-      void sendTo(ch.length ? ch : 'all', { title: c.title, message: c.message, severity: c.severity, url: publicUrl() || undefined });
-    }
+    if (!maintenance) notify(inc, c.rule);
   }
   for (const inc of open) {
     if (activeKeys.has(inc.key)) continue;
+    // the service itself cannot be reached right now: its warnings and metric alerts are not over, just unknown
+    const live = inc.rule_id ? ruleById.get(inc.rule_id) : undefined;
+    if (live && (live.type === 'metric' || live.type === 'plugin_alert') && frozen.has(inc.key.split(':')[1])) continue;
     // rule removed/disabled or condition cleared → resolve
     q.run('UPDATE incidents SET resolved_at = ? WHERE id = ?', now, inc.id);
     const resolved = { ...inc, resolved_at: now };
     bus.publish({ type: 'incident', incident: resolved });
     const rule = inc.rule_id ? q.get<RuleRow>('SELECT * FROM alert_rules WHERE id = ?', inc.rule_id) : undefined;
-    if (!maintenance && rule) {
+    // only say "resolved" for something that was announced, and not when the rule was merely switched off
+    if (!maintenance && rule && rule.enabled && inc.notified_at) {
       const ch = json<string[]>(rule.channels, []);
       const mins = Math.max(1, Math.round((now - inc.started_at) / 60000));
       void sendTo(ch.length ? ch : 'all', { title: `Resolved: ${inc.title}`, message: `Lasted ${mins} min`, severity: inc.severity, resolved: true });

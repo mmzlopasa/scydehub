@@ -58,7 +58,7 @@ function finish(d: CpanelData, warnDays: number) {
   const alerts: PluginAlert[] = [];
   for (const a of d.accounts) {
     if (a.error) alerts.push({ key: `acct:${a.user}`, severity: 'warning', message: `${a.user}: ${a.error}` });
-    for (const s of a.ssl) if (s.daysLeft < warnDays) alerts.push({ key: `ssl:${s.host}`, severity: s.daysLeft < 3 ? 'critical' : 'warning', message: `SSL ${s.host} expires in ${s.daysLeft} d` });
+    for (const s of a.ssl) if (s.daysLeft < warnDays) alerts.push({ key: `ssl:${s.host}`, severity: s.daysLeft < 3 ? 'critical' : 'warning', message: s.daysLeft < 0 ? `SSL ${s.host} expired ${-s.daysLeft} d ago` : `SSL ${s.host} expires in ${s.daysLeft} d` });
     if (a.diskLimitMb && a.diskUsedMb / a.diskLimitMb > 0.9) alerts.push({ key: `disk:${a.user}`, severity: 'warning', message: `${a.user} is using ${Math.round((a.diskUsedMb / a.diskLimitMb) * 100)}% of quota` });
   }
   const failing = d.accounts.filter((a) => a.error).length;

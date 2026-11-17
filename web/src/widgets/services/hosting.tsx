@@ -41,7 +41,7 @@ export function WhmServer({ data, size }: WidgetProps) {
         {svc.map((s: any) => <Badge key={s.name} tone={s.running === false ? 'bad' : s.running ? 'ok' : 'muted'}>{s.display}</Badge>)}
       </div>
       {down.length > 0 && <div className="text-xs text-bad">Not running: {down.map((d: any) => d.display).join(', ')}</div>}
-      {size === 'L' && (
+      {(size === 'L' || size === 'XL') && (
         <Section title="Accounts">
           <List>{(data?.accounts?.list ?? []).map((a: any) => <Row key={a.user} left={<StatusDot status={!a.suspended} />} title={a.domain} sub={`${a.user} · ${a.plan ?? ''}`} right={<span className="num text-xs text-muted">{a.diskUsed} / {a.diskLimit}</span>} />)}</List>
         </Section>
@@ -89,7 +89,10 @@ export function GenericValues({ data, size }: WidgetProps) {
   const v = data?.values ?? [];
   return (
     <div className="grid h-full content-start gap-3" style={{ gridTemplateColumns: `repeat(${size === 'S' ? 1 : 2}, minmax(0,1fr))` }}>
-      {v.map((x: any) => <Stat key={x.label} label={x.label} value={typeof x.value === 'number' ? <><AnimatedNumber value={x.value} format={(n) => (Math.abs(n) < 100 ? n.toFixed(1).replace(/\.0$/, '') : Math.round(n).toLocaleString(locale()))} /><span className="ml-1 text-sm text-muted">{x.unit}</span></> : String(x.value ?? '—')} />)}
+      {v.map((x: any, i: number) => <Stat key={i} label={x.label} value={typeof x.value === 'number'
+        ? <><AnimatedNumber value={x.value} format={(n) => (Math.abs(n) < 100 ? n.toFixed(1).replace(/\.0$/, '') : Math.round(n).toLocaleString(locale()))} /><span className="ml-1 text-sm text-muted">{x.unit}</span></>
+        : x.value == null || x.value === '' ? '—' : <>{String(x.value).slice(0, 80)}{x.unit && <span className="ml-1 text-sm text-muted">{x.unit}</span>}</>} />)}
+      {v.length === 0 && <Empty title="No values configured" />}
     </div>
   );
 }

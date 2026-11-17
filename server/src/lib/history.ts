@@ -14,11 +14,11 @@ export interface Point { ts: number; v: number; min?: number; max?: number }
 export function querySeries(series: string, from: number, to = Date.now(), maxPoints = 300): Point[] {
   const span = to - from;
   let rows: Point[];
-  if (span <= 6 * 3600_000) {
+  if (span <= 6 * 3600_000 + 120_000) { // tolerance: the client computes `from` a moment before we compute `to`
     rows = q.all<Point>('SELECT ts, value AS v FROM metrics WHERE series = ? AND ts BETWEEN ? AND ? ORDER BY ts', series, from, to);
     // raw may already be pruned for older ranges — fall back to 5m
     if (rows.length === 0) rows = q.all<Point>('SELECT ts, avg AS v, min, max FROM metrics_5m WHERE series = ? AND ts BETWEEN ? AND ? ORDER BY ts', series, from, to);
-  } else if (span <= 7 * 86400_000) {
+  } else if (span <= 7 * 86400_000 + 120_000) {
     rows = q.all<Point>('SELECT ts, avg AS v, min, max FROM metrics_5m WHERE series = ? AND ts BETWEEN ? AND ? ORDER BY ts', series, from, to);
     const lastTs = rows.at(-1)?.ts ?? from;
     rows = rows.concat(q.all<Point>('SELECT ts, value AS v FROM metrics WHERE series = ? AND ts > ? AND ts <= ? ORDER BY ts', series, lastTs + 300_000, to));
@@ -62,24 +62,28 @@ export function rollup(now = Date.now()) {
   const fiveMin = 300_000, hour = 3600_000;
   const done5 = Math.floor(now / fiveMin) * fiveMin; // only completed buckets
   const doneH = Math.floor(now / hour) * hour;
+  // normally the last few buckets; after the Hub was stopped for a while, everything since the last roll-up
+  // (raw rows are still there: metrics 48 h, check results 7 d)
+  const since = (table: string, usual: number) => Math.min(usual, q.get<{ ts: number | null }>(`SELECT MAX(ts) ts FROM ${table}`)?.ts ?? 0);
+  const from5 = since('metrics_5m', done5 - 2 * hour), from1h = since('metrics_1h', doneH - 3 * hour), fromChecks = since('check_hourly', doneH - 3 * hour);
   q.tx(() => {
     q.run(
       `INSERT OR REPLACE INTO metrics_5m (series, ts, avg, min, max)
        SELECT series, (ts / ${fiveMin}) * ${fiveMin} AS b, AVG(value), MIN(value), MAX(value)
        FROM metrics WHERE ts >= ? AND ts < ? GROUP BY series, b`,
-      done5 - 2 * hour, done5,
+      from5, done5,
     );
     q.run(
       `INSERT OR REPLACE INTO metrics_1h (series, ts, avg, min, max)
        SELECT series, (ts / ${hour}) * ${hour} AS b, AVG(avg), MIN(min), MAX(max)
        FROM metrics_5m WHERE ts >= ? AND ts < ? GROUP BY series, b`,
-      doneH - 3 * hour, doneH,
+      from1h, doneH,
     );
     q.run(
       `INSERT OR REPLACE INTO check_hourly (check_id, ts, total, ok, latency_avg)
        SELECT check_id, (ts / ${hour}) * ${hour} AS b, COUNT(*), SUM(ok), AVG(CASE WHEN ok = 1 THEN latency_ms END)
        FROM check_results WHERE ts >= ? AND ts < ? GROUP BY check_id, b`,
-      doneH - 3 * hour, doneH,
+      fromChecks, doneH,
     );
     q.run('DELETE FROM metrics WHERE ts < ?', now - 48 * hour);
     q.run('DELETE FROM metrics_5m WHERE ts < ?', now - 30 * 86400_000);

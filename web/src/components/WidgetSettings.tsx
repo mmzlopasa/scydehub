@@ -14,6 +14,7 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
   const instances = useStore((s) => s.instances);
   const [title, setTitle] = useState('');
   const [size, setSize] = useState<Size>('M');
+  const [sizePicked, setSizePicked] = useState(false);
   const [opts, setOpts] = useState<Record<string, any>>({});
   const [boardId, setBoardId] = useState('');
   const [instanceId, setInstanceId] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
     if (!widget) return;
     setTitle(widget.title ?? '');
     setSize(widget.size);
+    setSizePicked(false);
     const o = { ...widget.options };
     if (widget.kind === 'core.bookmarks') o.linksText = (o.links ?? []).map((l: any) => [l.name, l.url, l.icon].filter(Boolean).join(' | ')).join('\n');
     if (Array.isArray(o.metrics)) o.metrics = o.metrics.join(',');
@@ -44,12 +46,15 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
     if (typeof o.types === 'string') o.types = o.types.split(',').map((s: string) => s.trim()).filter(Boolean);
     try {
       await patch(`/api/widgets/${widget.id}`, { title: title || null, size, options: o, board_id: boardId, instance_id: instanceId });
-      if (size !== widget.size) {
-        // resize this widget on every saved device layout
+      // picking a size (even the stored one, after a manual resize) applies it on every saved device layout;
+      // a widget that moves to another board is placed afresh there
+      if (sizePicked && boardId === widget.board_id) {
         const b = boards.find((x) => x.id === widget.board_id);
         for (const [profile, l] of Object.entries(b?.layouts ?? {})) {
+          if (!l.some((it) => it.i === widget.id)) continue;
           const cols = GRID[profile as Profile]?.cols ?? 24;
-          const next = l.map((it) => (it.i === widget.id ? { ...it, w: profile === 'mobile' ? cols : Math.max(2, Math.round((SIZE_GRID[size].w / 24) * cols)), h: SIZE_GRID[size].h } : it));
+          const nw = profile === 'mobile' ? cols : Math.min(cols, Math.max(2, Math.round((SIZE_GRID[size].w / 24) * cols)));
+          const next = l.map((it) => (it.i === widget.id ? { ...it, x: Math.max(0, Math.min(it.x, cols - nw)), w: nw, h: SIZE_GRID[size].h } : it));
           await put(`/api/boards/${widget.board_id}/layout/${profile}`, { layout: next });
         }
       }
@@ -63,7 +68,7 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
       <div className="space-y-4">
         <Label><span className="text-xs font-medium text-muted">Title</span><Input value={title} placeholder="Default title" onChange={(e) => setTitle(e.target.value)} /></Label>
         <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Size (S, M, L, XL — larger sizes show more detail)</div>
-          <Segmented value={size} onChange={setSize} options={(['S', 'M', 'L', 'XL'] as Size[]).map((s) => ({ value: s, label: s }))} />
+          <Segmented value={size} onChange={(v) => { setSize(v); setSizePicked(true); }} options={(['S', 'M', 'L', 'XL'] as Size[]).map((s) => ({ value: s, label: s }))} />
         </div>
         {widget.instance_id && sameTypeInstances.length > 1 && (
           <Label><span className="text-xs font-medium text-muted">Service</span>
@@ -77,7 +82,7 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
           <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Icon (dashboard-icons name, image URL or upload)</div>
             <div className="flex flex-wrap items-center gap-2">
               <Input className="max-w-[220px]" placeholder="e.g. proxmox, plex, home-assistant" value={typeof opts.icon === 'string' && !opts.icon.startsWith('data:') ? opts.icon : ''} onChange={(e) => setOpts((s) => ({ ...s, icon: e.target.value.trim() }))} />
-              <ImagePicker value={typeof opts.icon === 'string' && /^(data:|https:)/.test(opts.icon) ? opts.icon : ''} onChange={(v) => setOpts((s) => ({ ...s, icon: v }))} maxKb={120} />
+              <ImagePicker value={typeof opts.icon === 'string' && /^(data:|https:)/.test(opts.icon) ? opts.icon : ''} onChange={(v) => setOpts((s) => ({ ...s, icon: v }))} maxKb={40} hint="Up to 40 KB" />
             </div>
           </div>
           <div className="space-y-1.5"><div className="text-xs font-medium text-muted">Accent colour (empty = theme colour)</div>
@@ -87,7 +92,7 @@ export function WidgetSettings({ widget, onClose }: { widget: WidgetRow | null; 
             </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-3">
-            <Toggle checked={!!opts.hideHeader} onChange={(v) => setOpts((s) => ({ ...s, hideHeader: v }))} label="Hide header" />
+            <Toggle checked={opts.hideHeader ?? ['core.clock', 'core.weather'].includes(widget.kind)} onChange={(v) => setOpts((s) => ({ ...s, hideHeader: v }))} label="Hide header" />
             <Toggle checked={!!opts.transparent} onChange={(v) => setOpts((s) => ({ ...s, transparent: v }))} label="No card (transparent)" />
             <Toggle checked={!!opts.noPadding} onChange={(v) => setOpts((s) => ({ ...s, noPadding: v }))} label="Edge to edge (no padding)" />
           </div>

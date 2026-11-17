@@ -19,7 +19,7 @@ services:
     image: ghcr.io/mmzlopasa/scydehub:${SCYDE_TAG:-latest}
     build:
       context: .
-      args: { VERSION: "${SCYDE_VERSION:-0.2.1}", BUILD_ID: "${SCYDE_BUILD_ID:-dev}" }
+      args: { VERSION: "${SCYDE_VERSION:-0.3.0}", BUILD_ID: "${SCYDE_BUILD_ID:-dev}" }
     user: "0:0"
     entrypoint: ["/bin/sh", "-c", "chown -R node:node /data && chmod 700 /data"]
     volumes:
@@ -81,8 +81,10 @@ services:
     restart: unless-stopped
     depends_on: [hub]
     ports:
-      - "80:80"
-      - "443:443"
+      # IPv4 only: over IPv6 Docker's proxy would hide the client address behind the bridge gateway,
+      # and every visitor would look like a local (allow-listed) one
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
     environment:
       DOMAIN: ${DOMAIN:-}
       ALLOW_CIDRS: ${ALLOW_CIDRS:-}
@@ -92,7 +94,8 @@ services:
       - ./deploy/certbot/conf:/etc/letsencrypt:ro
       - ./deploy/certbot/www:/var/www/certbot:ro
     # reload every 6h so renewed certificates are picked up
-    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'
+    # (through the image's entrypoint, so the template and the allowlist script are processed first)
+    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g "daemon off;"'
 
   certbot:
     profiles: [proxy]

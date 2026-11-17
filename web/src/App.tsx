@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import { KeyRound, Loader2 } from 'lucide-react';
 import { loadBranding, loadConfig, loadMe, useStore, setState } from './lib/store';
 import { connect } from './lib/realtime';
-import { kioskToken } from './lib/api';
+import { ApiError, kioskToken, validKioskToken } from './lib/api';
 import { detectProfile, type Profile } from './lib/device';
 import { applyTheme } from './lib/theme';
 import { Shell } from './components/Shell';
@@ -22,17 +22,22 @@ import { Button, Input } from './components/ui';
 // Accept a kiosk token handed over by the native shells or a bookmark. Preferred form is the URL fragment
 // (#token=…): fragments are never sent to the server or written to proxy logs. ?token= still works and is
 // removed from the address bar straight away.
-(() => {
+function takeToken() {
   const u = new URL(location.href);
   const hash = new URLSearchParams(u.hash.replace(/^#/, ''));
   const t = hash.get('token') ?? u.searchParams.get('token');
-  if (!t) return;
-  kioskToken.set(t.slice(0, 200));
+  if (!t) return false;
+  const changed = t !== kioskToken.get();
+  kioskToken.set(t); // ignored unless it looks like a token
   hash.delete('token');
   u.searchParams.delete('token');
   const h = hash.toString();
   history.replaceState(null, '', u.pathname + u.search + (h ? '#' + h : ''));
-})();
+  return changed;
+}
+takeToken();
+// a native shell that hands over a new token while the page is already open only changes the fragment
+window.addEventListener('hashchange', () => { if (takeToken()) location.reload(); });
 
 function BoardRoute({ profile }: { profile: Profile }) {
   const { id } = useParams();
@@ -45,13 +50,15 @@ function BoardRoute({ profile }: { profile: Profile }) {
 
 function KioskTokenEntry() {
   const [t, setT] = useState('');
+  const [bad, setBad] = useState(false);
   return (
     <div className="grid min-h-full place-items-center p-4">
-      <form className="glass animate-fade-up w-full max-w-sm space-y-4 p-8" onSubmit={(e) => { e.preventDefault(); if (t.trim()) { kioskToken.set(t.trim()); location.reload(); } }}>
+      <form className="glass animate-fade-up w-full max-w-sm space-y-4 p-8" onSubmit={(e) => { e.preventDefault(); const v = t.trim(); if (!v) return; if (!validKioskToken(v)) return setBad(true); kioskToken.set(v); location.reload(); }}>
         <Brand size={34} withTagline />
         <h1 className="text-2xl font-semibold">Kiosk</h1>
         <p className="text-sm text-muted">Enter a kiosk token (Settings → Kiosk & devices) or <a className="text-accent" href="/login">sign in as admin</a>.</p>
-        <Input className="font-mono" value={t} onChange={(e) => setT(e.target.value)} placeholder="sk_…" autoFocus autoComplete="off" spellCheck={false} />
+        <Input className="font-mono" value={t} onChange={(e) => { setT(e.target.value); setBad(false); }} placeholder="Kiosk token" autoFocus autoComplete="off" spellCheck={false} />
+        {bad && <div className="rounded-xl bg-bad/10 px-3 py-2 text-sm text-bad">That does not look like a kiosk token. Copy it again from Settings → Kiosk & devices.</div>}
         <Button type="submit" variant="primary" className="w-full" icon={<KeyRound className="size-4" />}>Connect</Button>
       </form>
     </div>
@@ -104,7 +111,11 @@ export default function App() {
         }
         if (kioskToken.get()) kioskToken.clear(); // revoked/invalid token
       })
-      .catch((e) => setErr(e.message));
+      .catch((e) => {
+        // a stored token that makes every request fail before it is even sent: drop it and start over once
+        if (kioskToken.get() && !(e instanceof ApiError)) { kioskToken.clear(); location.reload(); return; }
+        setErr(e.message);
+      });
   }, []);
   const look = settings ?? branding;
   useEffect(() => applyTheme(look, profile), [look, profile]);
