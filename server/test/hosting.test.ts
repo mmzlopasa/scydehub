@@ -74,3 +74,25 @@ test('cPanel via WHM: empty list = every account; unknown names fail with WHM\'s
     await assert.rejects(whm.collect(ctxFor(whm, { url: 'http://whm.example.com', username: 'root', token: 't' }) as any), /Use https:\/\//);
   } finally { server.close(); }
 });
+
+test('Streamero: other field names are understood; a missing list is not "nobody is watching"', async () => {
+  const { streamero } = await import('../src/plugins/streamero/index.js');
+  const { createServer: plain } = await import('node:http');
+  let body: unknown = {};
+  const server = plain((_q, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${(server.address() as any).port}`;
+  const ctx = { instanceId: 'x', instanceName: 'x', config: { url }, scratch: {}, tick: 1, log: () => {}, http: createHttpClient(url) } as any;
+  try {
+    body = { data: { sessions: [{ userName: 'Mislav', item: { name: 'Dune' }, position: 30, duration: 120, playMethod: 'Transcode', deviceName: 'TV' }] } };
+    const a = await streamero.collect(ctx);
+    assert.equal(a.summary, 'Active streams: 1 (1 transcoding)');
+    assert.deepEqual((a.data as any).streams[0], { user: 'Mislav', title: 'Dune', subtitle: undefined, progress: 25, transcoding: true, device: 'TV', quality: undefined, bandwidth: 0 });
+    body = { streams: [] };
+    assert.equal((await streamero.collect(ctx)).summary, 'Nobody is watching');
+    body = { version: '1', users: 3, library: {} };
+    const c = await streamero.collect(ctx);
+    assert.equal(c.status, 'degraded');
+    assert.match(c.alerts![0].message, /no "streams" list \(fields received: version, users, library\)/);
+  } finally { server.close(); }
+});

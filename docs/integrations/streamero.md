@@ -30,3 +30,11 @@ Add it to Streamero (the path and the key header can be changed in the service s
 Every field except `streams` is optional. `progress` is 0–100, `bandwidth` is in bit/s.
 The stats path must be a path on the configured host (absolute URLs are refused).
 Metrics stored in history: `streams`, `transcodes`, `bandwidth`.
+
+### Accepted variations
+The Hub also understands a `{ "data": { … } }` envelope, the list under `sessions`, `activeStreams`,
+`activeSessions`, `nowPlaying`, `playing` or `active`, and common field names per session
+(`userName`/`username`, `name`/`item.name`, `position` + `duration` instead of `progress`,
+`playMethod: "Transcode"`, `deviceName`/`client`, `bitrate`).
+If none of these lists is present, the service shows as degraded and *Test connection* lists the
+field names it received (names only, never values).
