@@ -24,6 +24,13 @@ async function uapi(ctx: PluginContext<Cfg>, user: string, module: string, fn: s
   return res?.data;
 }
 
+/** WHM/cPanel tokens are full credentials and these servers are on the internet: never send them over plain HTTP */
+export function requireHttps(url: string, port: string) {
+  if (!/^https:\/\//i.test(String(url ?? '')))
+    throw new Error(`Use https:// for this service (e.g. https://server.example.com:${port}) — the API token would otherwise travel unencrypted`);
+}
+
+const MAX_ACCOUNTS = 60;
 const mb = (v: any) => (v === null || v === undefined || v === 'unlimited' ? null : Number(String(v).replace(/[^\d.]/g, '')) || 0);
 
 async function account(ctx: PluginContext<Cfg>, user: string): Promise<CpanelAccount> {
@@ -77,20 +84,31 @@ export const cpanel: Plugin<Cfg, CpanelData> = {
   defaultInterval: 600,
   fields: [
     { key: 'mode', label: 'Mode', type: 'select', default: 'cpanel', options: [{ value: 'cpanel', label: 'cPanel token (single account, port 2083)' }, { value: 'whm', label: 'WHM token (multiple accounts, port 2087)' }] },
-    { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://server.example.com:2083' },
+    { key: 'url', label: 'URL', type: 'url', required: true, placeholder: 'https://server.example.com:2087', help: 'WHM mode: the WHM address (port 2087). cPanel mode: the cPanel address (port 2083). Always https://' },
     { key: 'username', label: 'Username (cPanel user or root)', type: 'string', required: true },
     { key: 'token', label: 'API token', type: 'secret', required: true },
-    { key: 'accounts', label: 'Accounts (WHM mode only, comma-separated)', type: 'string', placeholder: 'scyde,klijent1' },
+    { key: 'accounts', label: 'Accounts (WHM mode only)', type: 'string', placeholder: 'empty = all accounts', help: 'cPanel usernames, comma-separated. Leave empty to show every account the WHM token can see (up to 60).' },
     { key: 'sslWarnDays', label: 'Warn when SSL expires within (days)', type: 'number', default: 14 },
     ...tlsFields,
   ],
   http: (c) => ({ headers: { Authorization: `${c.mode === 'whm' ? 'whm' : 'cpanel'} ${c.username}:${c.token}` } }),
   async collect(ctx) {
     const c = ctx.config;
-    const users = c.mode === 'whm' ? (c.accounts ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [c.username];
+    requireHttps(c.url, c.mode === 'whm' ? '2087' : '2083');
+    let users = c.mode === 'whm' ? (c.accounts ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [c.username];
+    if (c.mode === 'whm' && !users.length) {
+      // no list given: every account this WHM token can see
+      const r = await ctx.http.get<any>('/json-api/listaccts', { query: { 'api.version': 1, want: 'user' } });
+      if (r?.metadata?.result === 0) throw new Error(r.metadata.reason ?? 'WHM refused to list the accounts');
+      users = ((r?.data?.acct ?? []) as any[]).map((a) => String(a.user)).filter(Boolean).slice(0, MAX_ACCOUNTS);
+      if (!users.length) throw new Error('This WHM token sees no accounts');
+    }
     if (!users.length) throw new Error('Specify at least one account');
-    const accounts = [];
-    for (const u of users) accounts.push(await account(ctx, u));
+    // a few at a time: one account costs five API calls
+    const accounts: CpanelAccount[] = [];
+    for (let i = 0; i < users.length; i += 4) accounts.push(...(await Promise.all(users.slice(i, i + 4).map((u) => account(ctx, u)))));
+    // nothing could be read at all: report WHM's own reason instead of a list of empty accounts
+    if (accounts.every((a) => a.error)) throw new Error(accounts.length === 1 ? accounts[0].error : `${accounts[0].user}: ${accounts[0].error}`);
     return finish({ accounts }, Number(c.sslWarnDays) || 14);
   },
   mock(ctx) {

@@ -47,7 +47,7 @@ export const COMPLETE: Template = {
     { plugin: 'radarr', name: 'Radarr' }, { plugin: 'sonarr', name: 'Sonarr' }, { plugin: 'bazarr', name: 'Bazarr' }, { plugin: 'prowlarr', name: 'Prowlarr' },
     { plugin: 'seerr', name: 'Seerr' }, { plugin: 'qbittorrent', name: 'qBittorrent' }, { plugin: 'adguard', name: 'AdGuard Home' },
     { plugin: 'mikrotik', name: 'MikroTik', config: { wanInterface: 'ether1-wan' } }, { plugin: 'pangolin', name: 'Pangolin' }, { plugin: 'vaultwarden', name: 'Vaultwarden' },
-    { plugin: 'whm', name: 'WHM' }, { plugin: 'cpanel', name: 'cPanel', config: { mode: 'whm', accounts: 'account1,account2' } },
+    { plugin: 'whm', name: 'WHM' }, { plugin: 'cpanel', name: 'cPanel', config: { mode: 'whm', accounts: '' } },
     { plugin: 'docker', name: 'Docker', config: { url: 'http://docker-socket-proxy:2375' } },
     { plugin: 'prometheus', name: 'Prometheus', config: { queries: 'CPU temp = max(node_hwmon_temp_celsius) | °C\nLoad = node_load1 | \nDisk used = 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) | %\nUPS load = ups_load | %' } },
     { plugin: 'http-json', name: 'Custom API', config: { fields: 'Users = stats.users | \nRequests = stats.requests | /min\nErrors = stats.errors | \nQueue = stats.queue | ' } },

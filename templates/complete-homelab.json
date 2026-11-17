@@ -73,7 +73,7 @@
       "name": "cPanel",
       "config": {
         "mode": "whm",
-        "accounts": "account1,account2"
+        "accounts": ""
       }
     },
     {

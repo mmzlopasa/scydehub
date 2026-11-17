@@ -15,7 +15,7 @@ RUN npm run build -w web && npm run build -w server \
 
 # ---------- runtime ----------
 FROM node:22-alpine
-ARG VERSION=0.3.0
+ARG VERSION=0.3.1
 ARG BUILD_ID=dev
 # iputils: real ICMP ping (unprivileged via net.ipv4.ping_group_range), tini: proper signal handling
 RUN apk add --no-cache iputils tini ca-certificates tzdata

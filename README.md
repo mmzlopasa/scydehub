@@ -262,7 +262,7 @@ deploy/            nginx template, certbot script, external heartbeat
 
 | Area | How | Result |
 | --- | --- | --- |
-| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation (types, ranges, enums), path confinement, board templates, per-service TLS against a real self-signed server, PromQL field parsing, JSON expectations, redirect handling in checks | 16/16 pass |
+| Backend | `npm test`: encryption and tamper detection, scrypt, TOTP against RFC 6238 vectors, downsampling, all 19 plugin mocks, secrets bound to instance and URL, settings validation (types, ranges, enums), path confinement, board templates, per-service TLS against a real self-signed server, WHM/cPanel with a reseller token, PromQL field parsing, JSON expectations, redirect handling in checks | 18/18 pass |
 | Types | `tsc` for server and web | clean |
 | Security, live | 22 requests against a running server: CSRF header, password re-confirmation, refusing to send a stored key to a new URL, kiosk role limits, token not accepted from the URL, input validation, lockout after failed sign-ins | all behave as designed |
 | WebSocket | Cross-site origin refused, kiosk token through the sub-protocol, connection closed on token revoke and on sign-out | all behave as designed |

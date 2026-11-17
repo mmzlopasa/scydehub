@@ -264,7 +264,9 @@ export default async function apiRoutes(app: FastifyInstance) {
     try {
       const r = await Promise.race([p.collect(contextFor(fake, true)), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout after 25s')), 25_000))]);
       audit(req, 'instance.test', existing?.id ?? p.id, undefined, true);
-      return { ok: true, status: r.status, summary: r.summary, ms: Math.round(performance.now() - started) };
+      // connected, but the service itself reports a problem: say which
+      const problem = r.status === 'up' ? undefined : (r.alerts ?? []).find((a) => a.severity === 'critical')?.message ?? r.alerts?.[0]?.message;
+      return { ok: true, status: r.status, summary: r.summary, problem, ms: Math.round(performance.now() - started) };
     } catch (e: any) {
       return { ok: false, error: e?.cause?.message ? `${e.message}: ${e.cause.message}` : String(e?.message ?? e) };
     }

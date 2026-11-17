@@ -25,7 +25,7 @@ export const pangolin: Plugin<Cfg, PangolinData> = {
   docsUrl: 'https://docs.pangolin.net/manage/integration-api',
   defaultInterval: 30,
   fields: [
-    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'Not the dashboard address. Enable flags.enable_integration_api: true in Pangolin\'s config.yml; the API listens on port 3003 (http://pangolin-host:3003, or the hostname you route to it). <URL>/v1/docs must open.' },
+    { key: 'url', label: 'Integration API URL', type: 'url', required: true, placeholder: 'http://pangolin:3003', help: 'Not the dashboard address: the Integration API is a separate server on port 3003. Turn it on with flags.enable_integration_api: true in config/config.yml and give it its own hostname in Traefik (e.g. https://api.example.com → http://pangolin:3003). <URL>/v1/docs must open.' },
     { key: 'apiKey', label: 'API key (id.secret)', type: 'secret', required: true, help: 'Organization → API Keys. Permissions needed: Site → List Sites and Resource → List Resources.' },
     { key: 'orgId', label: 'Org ID', type: 'string', required: true },
     ...tlsFields,

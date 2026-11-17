@@ -18,14 +18,17 @@ function InstanceForm({ plugin, instance, onClose }: { plugin: PluginMeta; insta
   const [enabled, setEnabled] = useState(instance?.enabled ?? true);
   const [icon, setIcon] = useState(instance?.display?.icon ?? '');
   const [color, setColor] = useState(instance?.display?.color ?? '');
-  const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null);
+  const [test, setTest] = useState<{ ok: boolean; text: string; warn?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const runTest = async () => {
     setBusy(true); setTest(null);
     try {
       const r = await post('/api/instances/test', { plugin: plugin.id, config: cfg, id: instance?.id });
-      setTest(r.ok ? { ok: true, text: `Working (${r.ms} ms) — ${r.summary ?? r.status}` } : { ok: false, text: r.error });
+      setTest(!r.ok ? { ok: false, text: r.error }
+        : r.status === 'down' ? { ok: false, text: `Connected (${r.ms} ms), but: ${r.problem ?? r.summary ?? 'the service reports a problem'}` }
+        : r.status === 'degraded' ? { ok: true, warn: true, text: `Connected (${r.ms} ms) — ${r.summary ?? ''}${r.problem ? ` · ${r.problem}` : ''}` }
+        : { ok: true, text: `Working (${r.ms} ms) — ${r.summary ?? r.status}` });
     } catch (e: any) { if (e.message !== 'Cancelled') setTest({ ok: false, text: e.message }); } finally { setBusy(false); }
   };
   const save = async () => {
@@ -82,7 +85,7 @@ function InstanceForm({ plugin, instance, onClose }: { plugin: PluginMeta; insta
           <Toggle checked={enabled} onChange={setEnabled} label="Enabled" />
           <Toggle checked={mock} onChange={setMock} label={<span className="flex items-center gap-1"><FlaskConical className="size-3.5" />Mock mode (fake data, no connection)</span>} />
         </div>
-        {test && <div className={cx('flex items-start gap-2 rounded-xl px-3 py-2 text-sm', test.ok ? 'bg-ok/10 text-ok' : 'bg-bad/10 text-bad')}>{test.ok ? <CheckCircle2 className="mt-0.5 size-4" /> : <XCircle className="mt-0.5 size-4" />}<span className="break-all">{test.text}</span></div>}
+        {test && <div className={cx('flex items-start gap-2 rounded-xl px-3 py-2 text-sm', test.warn ? 'bg-warn/10 text-warn' : test.ok ? 'bg-ok/10 text-ok' : 'bg-bad/10 text-bad')}>{test.ok ? <CheckCircle2 className="mt-0.5 size-4" /> : <XCircle className="mt-0.5 size-4" />}<span className="break-all">{test.text}</span></div>}
         <p className="text-xs text-muted">Secrets (API keys, passwords) are stored encrypted on the server and are never sent back to the browser.</p>
       </div>
     </Modal>

@@ -33,14 +33,15 @@ export function WhmServer({ data, size }: WidgetProps) {
   return (
     <div className="flex h-full flex-col gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Load" value={<AnimatedNumber value={data?.load?.one} format={(n) => n.toFixed(2)} />} sub={`${data?.load?.five ?? '—'} · ${data?.load?.fifteen ?? '—'}`} />
-        <Stat label="Accounts" value={<AnimatedNumber value={data?.accounts?.total} />} sub={data?.accounts?.suspended ? `${data.accounts.suspended} suspended` : 'all active'} />
+        <Stat label="Load" value={data?.load ? <AnimatedNumber value={data.load.one} format={(n) => n.toFixed(2)} /> : '—'} sub={data?.load ? `${data.load.five} · ${data.load.fifteen}` : 'not allowed'} />
+        <Stat label={data?.scope === 'reseller' ? 'Accounts (reseller)' : 'Accounts'} value={<AnimatedNumber value={data?.accounts?.total} />} sub={data?.accounts?.suspended ? `${data.accounts.suspended} suspended` : 'all active'} />
         <Stat label="Backup" value={<span className="text-sm">{data?.backup?.enabled === false ? 'Disabled' : data?.backup?.lastDate ?? '—'}</span>} />
       </div>
       <div className="flex flex-wrap gap-1">
         {svc.map((s: any) => <Badge key={s.name} tone={s.running === false ? 'bad' : s.running ? 'ok' : 'muted'}>{s.display}</Badge>)}
       </div>
       {down.length > 0 && <div className="text-xs text-bad">Not running: {down.map((d: any) => d.display).join(', ')}</div>}
+      {data?.unavailable?.length > 0 && <div className="text-xs text-muted">This token may not read: {data.unavailable.join(', ')}. Use a root token for the whole server.</div>}
       {(size === 'L' || size === 'XL') && (
         <Section title="Accounts">
           <List>{(data?.accounts?.list ?? []).map((a: any) => <Row key={a.user} left={<StatusDot status={!a.suspended} />} title={a.domain} sub={`${a.user} · ${a.plan ?? ''}`} right={<span className="num text-xs text-muted">{a.diskUsed} / {a.diskLimit}</span>} />)}</List>
