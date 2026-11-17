@@ -110,7 +110,19 @@ export function createHttpClient(baseUrl: string, defaults: { headers?: Record<s
     if (r.status >= 400 || (r.status >= 300 && r.status < 400)) {
       // The message ends up in widget state (visible to read-only kiosks) and logs: never include the
       // response body or the query string (both may carry credentials). The body stays on the error object.
-      throw new HttpError(r.status, `HTTP ${r.status} ${path.split('?')[0]}`, r.text);
+      let hint = '';
+      if (r.status >= 300 && r.status < 400) {
+        // redirects are never followed (credentials must not travel to another address) — say what to change instead
+        const loc = String(r.headers.get('location') ?? '');
+        const url = buildUrl(baseUrl, path);
+        if (url.startsWith('http://') && loc.startsWith('https://')) hint = ' — this service only answers over HTTPS: change the URL to start with https://';
+        else if (loc) {
+          let where = '';
+          try { where = new URL(loc, url).origin; } catch { /* ignore */ }
+          hint = where && where !== new URL(url).origin ? ` — the service redirects to ${where}: use that address as the URL` : ' — the service redirects (often to a login page): check the URL and base path';
+        }
+      }
+      throw new HttpError(r.status, `HTTP ${r.status} ${path.split('?')[0]}${hint}`, r.text);
     }
     if (opts.text) return r.text as T;
     if (!r.text) return undefined as T;
