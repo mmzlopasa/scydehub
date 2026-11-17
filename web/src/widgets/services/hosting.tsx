@@ -41,7 +41,7 @@ export function WhmServer({ data, size }: WidgetProps) {
         {svc.map((s: any) => <Badge key={s.name} tone={s.running === false ? 'bad' : s.running ? 'ok' : 'muted'}>{s.display}</Badge>)}
       </div>
       {down.length > 0 && <div className="text-xs text-bad">Not running: {down.map((d: any) => d.display).join(', ')}</div>}
-      {data?.unavailable?.length > 0 && <div className="text-xs text-muted">This token may not read: {data.unavailable.join(', ')}. Use a root token for the whole server.</div>}
+      {data?.unavailable?.length > 0 && <div className="text-xs text-muted">This token may not read: {data.unavailable.join(', ')}.{data?.fullAccess === false ? ' It lacks the "all" privilege (root-level access).' : ''}</div>}
       {(size === 'L' || size === 'XL') && (
         <Section title="Accounts">
           <List>{(data?.accounts?.list ?? []).map((a: any) => <Row key={a.user} left={<StatusDot status={!a.suspended} />} title={a.domain} sub={`${a.user} · ${a.plan ?? ''}`} right={<span className="num text-xs text-muted">{a.diskUsed} / {a.diskLimit}</span>} />)}</List>

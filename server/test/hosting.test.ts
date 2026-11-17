@@ -22,6 +22,7 @@ async function fakeWhm() {
     const u = new URL(req.url!, 'https://x');
     const send = (b: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(b)); };
     switch (u.pathname) {
+      case '/json-api/myprivs': return send(ok({ privileges: [{ all: 0, 'list-accts': 1 }] }));
       case '/json-api/systemloadavg': return send(deny('systemloadavg'));
       case '/json-api/servicestatus': return send(deny('servicestatus'));
       case '/json-api/listaccts': return send(ok({ acct: [
@@ -55,6 +56,7 @@ test('WHM with a reseller token: shows its accounts, says what it cannot read, n
     const r = await whm.collect(ctxFor(whm, { url, username: 'shadm', token: 't' }) as any);
     assert.equal((r.data as any).load, null);
     assert.equal((r.data as any).scope, 'reseller');
+    assert.equal((r.data as any).fullAccess, false);
     assert.deepEqual((r.data as any).unavailable, ['server load', 'services']);
     assert.equal((r.data as any).accounts.total, 2);
     assert.match(r.summary!, /^2 accounts \(reseller only\) · 1 suspended$/);

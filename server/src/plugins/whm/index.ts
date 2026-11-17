@@ -14,6 +14,8 @@ export interface WhmData {
   scope?: 'server' | 'reseller';
   /** parts this token is not allowed to read */
   unavailable?: string[];
+  /** false: the token lacks WHM's "all" privilege (root-level access) */
+  fullAccess?: boolean | null;
 }
 
 /** WHM API 1 envelope: {metadata:{result, reason}, data} */
@@ -59,7 +61,9 @@ export const whm: Plugin<Cfg, WhmData> = {
     const errors: string[] = [];
     const unavailable: string[] = [];
     const part = <T>(what: string, p: Promise<T>) => p.catch((e: any) => { errors.push(String(e?.message ?? e)); unavailable.push(what); return null; });
-    const [load, svc, accts] = await Promise.all([
+    const [privs, load, svc, accts] = await Promise.all([
+      // what this token may actually do (a reseller with "all" sees the whole server, one without it only its own accounts)
+      http.get('/json-api/myprivs', { query: v1 }).then((r) => unwrap<any>(r)).catch(() => null),
       part('server load', http.get('/json-api/systemloadavg', { query: v1 }).then((r) => unwrap<any>(r))),
       part('services', http.get('/json-api/servicestatus', { query: v1 }).then((r) => unwrap<any>(r))),
       part('accounts', http.get('/json-api/listaccts', { query: { ...v1, want: 'user,domain,suspended,diskused,disklimit,plan,owner' } }).then((r) => unwrap<any>(r))),
@@ -76,10 +80,13 @@ export const whm: Plugin<Cfg, WhmData> = {
     const acct = (accts?.acct ?? []) as any[];
     // a reseller's token lists only the accounts that reseller owns (WHM filters them), not the whole server
     const user = String(c.username ?? '').toLowerCase();
-    const scope = user !== 'root' && (unavailable.includes('server load') || (acct.length > 0 && acct.every((a) => String(a.owner ?? '').toLowerCase() === user))) ? 'reseller' : 'server';
+    const p = Array.isArray(privs?.privileges) ? privs.privileges[0] : privs?.privileges;
+    const fullAccess: boolean | null = p && typeof p === 'object' ? Number(p.all) === 1 : null;
+    const scope = fullAccess === true || user === 'root' ? 'server'
+      : fullAccess === false || unavailable.includes('server load') || (acct.length > 0 && acct.every((a) => String(a.owner ?? '').toLowerCase() === user)) ? 'reseller' : 'server';
     return finish({
       load: load ? { one: Number(load.one) || 0, five: Number(load.five) || 0, fifteen: Number(load.fifteen) || 0 } : null,
-      scope, unavailable,
+      scope, unavailable, fullAccess,
       services: (svc?.service ?? []).filter((s: any) => s.installed !== 0).map((s: any) => ({ name: s.name, display: s.display_name ?? s.name, enabled: !!Number(s.enabled), running: s.running === undefined ? null : !!Number(s.running) })),
       accounts: { total: acct.length, suspended: acct.filter((a) => Number(a.suspended)).length, list: acct.map((a) => ({ user: a.user, domain: a.domain, suspended: !!Number(a.suspended), diskUsed: a.diskused, diskLimit: a.disklimit, plan: a.plan })) },
       backup: { ...scratch.backup, maxAgeDays: (c as any).backupMaxAgeDays === '' || (c as any).backupMaxAgeDays == null ? 2 : Math.max(0, Number((c as any).backupMaxAgeDays) || 0) }, version: scratch.version,
