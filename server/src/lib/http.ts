@@ -1,6 +1,6 @@
-import { Agent, fetch, type Dispatcher } from 'undici';
+import { Agent, buildConnector, fetch, type Dispatcher } from 'undici';
 import { createHash } from 'node:crypto';
-import type { PeerCertificate } from 'node:tls';
+import type { TLSSocket } from 'node:tls';
 
 export interface TlsOptions {
   /** Accept self-signed / invalid certificates for THIS service only. */
@@ -31,20 +31,25 @@ export function agentFor(tls?: TlsOptions): Dispatcher {
   let a = agents.get(k);
   if (!a) {
     const pin = tls.fingerprint ? normFp(tls.fingerprint) : null;
+    // With a pin the CA chain is not consulted at all: the certificate must be exactly the pinned one.
+    const connector = buildConnector({ timeout: 8000, ...(tls.ca ? { ca: tls.ca } : {}), rejectUnauthorized: !(tls.insecure || pin) });
     a = new Agent({
       keepAliveTimeout: 10_000,
-      connect: {
-        timeout: 8000,
-        ca: tls.ca || undefined,
-        // With a fingerprint pin we verify the leaf cert ourselves instead of the CA chain.
-        rejectUnauthorized: !(tls.insecure || pin),
-        checkServerIdentity: pin
-          ? (_host: string, cert: PeerCertificate) => {
-              const got = createHash('sha256').update(cert.raw).digest('hex');
-              return got === pin ? undefined : new Error(`TLS fingerprint mismatch (got ${got})`);
-            }
-          : undefined,
-      },
+      connect: pin
+        ? (opts: any, cb: (err: Error | null, socket: any) => void) =>
+            connector(opts, (err, socket) => {
+              if (err || !socket) return cb(err ?? new Error('connect failed'), null);
+              // Node skips the identity callback for untrusted chains, so the fingerprint is compared here,
+              // right after the handshake and before a single byte of the request (or a credential) is sent.
+              const raw = opts.protocol === 'https:' ? (socket as TLSSocket).getPeerCertificate()?.raw : undefined;
+              const got = raw ? createHash('sha256').update(raw).digest('hex') : '';
+              if (got !== pin) {
+                socket.destroy();
+                return cb(new Error(raw ? `TLS fingerprint mismatch (got ${got})` : 'TLS fingerprint pin set, but the connection is not HTTPS'), null);
+              }
+              cb(null, socket);
+            })
+        : connector,
     });
     agents.set(k, a);
   }
